@@ -1,6 +1,7 @@
 pub(crate) mod daplink;
 #[cfg(feature = "ftdi")]
 pub(crate) mod ftdi;
+pub(crate) mod icdi;
 pub(crate) mod jlink;
 pub(crate) mod stlink;
 
