@@ -182,6 +182,7 @@ impl Probe {
             list.extend(ftdi::list_ftdi_devices());
         }
         list.extend(stlink::tools::list_stlink_devices());
+        list.extend(icdi::tools::list_icdi_devices());
 
         list.extend(list_jlink_devices());
 
@@ -199,6 +200,11 @@ impl Probe {
         };
         #[cfg(feature = "ftdi")]
         match ftdi::FtdiProbe::new_from_selector(selector.clone()) {
+            Ok(link) => return Ok(Probe::from_specific_probe(link)),
+            Err(DebugProbeError::ProbeCouldNotBeCreated(ProbeCreationError::NotFound)) => {}
+            Err(e) => return Err(e),
+        };
+        match icdi::ICDI::new_from_selector(selector.clone()) {
             Ok(link) => return Ok(Probe::from_specific_probe(link)),
             Err(DebugProbeError::ProbeCouldNotBeCreated(ProbeCreationError::NotFound)) => {}
             Err(e) => return Err(e),
@@ -488,6 +494,7 @@ pub trait DebugProbe: Send + fmt::Debug {
 pub enum DebugProbeType {
     DAPLink,
     FTDI,
+    ICDI,
     STLink,
     JLink,
 }

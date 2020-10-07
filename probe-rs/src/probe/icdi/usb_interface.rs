@@ -2,11 +2,11 @@ use lazy_static::lazy_static;
 use rusb::{Context, DeviceHandle, Error, UsbContext};
 use std::time::Duration;
 
-use crate::probe::stlink::StlinkError;
+use crate::probe::icdi::IcdiError;
 
 use std::collections::HashMap;
 
-use super::tools::{is_stlink_device, read_serial_number};
+use super::tools::{is_icdi_device, read_serial_number};
 use crate::{
     probe::{DebugProbeError, ProbeCreationError},
     DebugProbeSelector,
@@ -16,29 +16,29 @@ use crate::{
 const CMD_LEN: usize = 16;
 
 /// The USB VendorID.
-pub const USB_VID: u16 = 0x0483;
+pub const USB_VID: u16 = 0x1cbe; // Luminary Micro Inc.
 
 pub const TIMEOUT: Duration = Duration::from_millis(1000);
 
 lazy_static! {
     /// Map of USB PID to firmware version name and device endpoints.
-    pub static ref USB_PID_EP_MAP: HashMap<u16, STLinkInfo> = {
+    pub static ref USB_PID_EP_MAP: HashMap<u16, ICDIInfo> = {
         let mut m = HashMap::new();
-        m.insert(0x3748, STLinkInfo::new("V2",    0x3748, 0x02,   0x81,   0x83));
-        m.insert(0x374b, STLinkInfo::new("V2-1",  0x374b, 0x01,   0x81,   0x82));
-        m.insert(0x374a, STLinkInfo::new("V2-1",  0x374a, 0x01,   0x81,   0x82));  // Audio
-        m.insert(0x3742, STLinkInfo::new("V2-1",  0x3742, 0x01,   0x81,   0x82));  // No MSD
-        m.insert(0x3752, STLinkInfo::new("V2-1",  0x3752, 0x01,   0x81,   0x82));  // Unproven
-        m.insert(0x374e, STLinkInfo::new("V3",    0x374e, 0x01,   0x81,   0x82));
-        m.insert(0x374f, STLinkInfo::new("V3",    0x374f, 0x01,   0x81,   0x82));  // Bridge
-        m.insert(0x3753, STLinkInfo::new("V3",    0x3753, 0x01,   0x81,   0x82));  // 2VCP
+        m.insert(0x00fd, ICDIInfo::new("V2",    0x00fd, 0x02,   0x81,   0x83));
+        // m.insert(0x374b, STLinkInfo::new("V2-1",  0x374b, 0x01,   0x81,   0x82));
+        // m.insert(0x374a, STLinkInfo::new("V2-1",  0x374a, 0x01,   0x81,   0x82));  // Audio
+        // m.insert(0x3742, STLinkInfo::new("V2-1",  0x3742, 0x01,   0x81,   0x82));  // No MSD
+        // m.insert(0x3752, STLinkInfo::new("V2-1",  0x3752, 0x01,   0x81,   0x82));  // Unproven
+        // m.insert(0x374e, STLinkInfo::new("V3",    0x374e, 0x01,   0x81,   0x82));
+        // m.insert(0x374f, STLinkInfo::new("V3",    0x374f, 0x01,   0x81,   0x82));  // Bridge
+        // m.insert(0x3753, STLinkInfo::new("V3",    0x3753, 0x01,   0x81,   0x82));  // 2VCP
         m
     };
 }
 
 /// A helper struct to match STLink deviceinfo.
 #[derive(Clone, Debug, Default)]
-pub struct STLinkInfo {
+pub struct ICDIInfo {
     pub version_name: String,
     pub usb_pid: u16,
     ep_out: u8,
@@ -46,7 +46,7 @@ pub struct STLinkInfo {
     ep_swo: u8,
 }
 
-impl STLinkInfo {
+impl ICDIInfo {
     pub fn new<V: Into<String>>(
         version_name: V,
         usb_pid: u16,
@@ -64,21 +64,21 @@ impl STLinkInfo {
     }
 }
 
-pub(crate) struct STLinkUSBDevice {
+pub(crate) struct ICDIUSBDevice {
     device_handle: DeviceHandle<rusb::Context>,
-    info: STLinkInfo,
+    info: ICDIInfo,
 }
 
-impl std::fmt::Debug for STLinkUSBDevice {
+impl std::fmt::Debug for ICDIUSBDevice {
     fn fmt(&self, fmt: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        fmt.debug_struct("STLinkUSBDevice")
+        fmt.debug_struct("ICDIUSBDevice")
             .field("device_handle", &"DeviceHandle<rusb::Context>")
             .field("info", &self.info)
             .finish()
     }
 }
 
-pub trait StLinkUsb: std::fmt::Debug {
+pub trait IcdiUsb: std::fmt::Debug {
     fn write(
         &mut self,
         cmd: &[u8],
@@ -98,7 +98,7 @@ pub trait StLinkUsb: std::fmt::Debug {
     ) -> Result<usize, DebugProbeError>;
 }
 
-impl STLinkUSBDevice {
+impl ICDIUSBDevice {
     /// Creates and initializes a new USB device.
     pub fn new_from_selector(
         selector: impl Into<DebugProbeSelector>,
@@ -112,7 +112,7 @@ impl STLinkUSBDevice {
         let device = context
             .devices()?
             .iter()
-            .filter(is_stlink_device)
+            .filter(is_icdi_device)
             .find_map(|device| {
                 let descriptor = device.device_descriptor().ok()?;
                 // First match the VID & PID.
@@ -174,15 +174,15 @@ impl STLinkUSBDevice {
         }
 
         if !endpoint_out {
-            return Err(StlinkError::EndpointNotFound.into());
+            return Err(IcdiError::EndpointNotFound.into());
         }
 
         if !endpoint_in {
-            return Err(StlinkError::EndpointNotFound.into());
+            return Err(IcdiError::EndpointNotFound.into());
         }
 
         if !endpoint_swo {
-            return Err(StlinkError::EndpointNotFound.into());
+            return Err(IcdiError::EndpointNotFound.into());
         }
 
         let usb_stlink = Self {
@@ -190,7 +190,7 @@ impl STLinkUSBDevice {
             info,
         };
 
-        log::debug!("Succesfully attached to STLink.");
+        log::debug!("Succesfully attached to ICDI.");
 
         Ok(usb_stlink)
     }
@@ -202,7 +202,7 @@ impl STLinkUSBDevice {
     }
 }
 
-impl StLinkUsb for STLinkUSBDevice {
+impl IcdiUsb for ICDIUSBDevice {
     /// Writes to the out EP and reads back data if needed.
     /// First the `cmd` is sent.
     /// In a second step `write_data` is transmitted.
@@ -215,7 +215,7 @@ impl StLinkUsb for STLinkUSBDevice {
         timeout: Duration,
     ) -> Result<(), DebugProbeError> {
         log::trace!(
-            "Sending command {:x?} to STLink, timeout: {:?}",
+            "Sending command {:x?} to ICDI, timeout: {:?}",
             cmd,
             timeout
         );
@@ -234,7 +234,7 @@ impl StLinkUsb for STLinkUSBDevice {
             .map_err(|e| DebugProbeError::USB(Some(Box::new(e))))?;
 
         if written_bytes != CMD_LEN {
-            return Err(StlinkError::NotEnoughBytesRead {
+            return Err(IcdiError::NotEnoughBytesRead {
                 is: written_bytes,
                 should: CMD_LEN,
             }
@@ -247,7 +247,7 @@ impl StLinkUsb for STLinkUSBDevice {
                 .write_bulk(ep_out, write_data, timeout)
                 .map_err(|e| DebugProbeError::USB(Some(Box::new(e))))?;
             if written_bytes != write_data.len() {
-                return Err(StlinkError::NotEnoughBytesRead {
+                return Err(IcdiError::NotEnoughBytesRead {
                     is: written_bytes,
                     should: write_data.len(),
                 }
@@ -261,7 +261,7 @@ impl StLinkUsb for STLinkUSBDevice {
                 .read_bulk(ep_in, read_data, timeout)
                 .map_err(|e| DebugProbeError::USB(Some(Box::new(e))))?;
             if read_bytes != read_data.len() {
-                return Err(StlinkError::NotEnoughBytesRead {
+                return Err(IcdiError::NotEnoughBytesRead {
                     is: read_bytes,
                     should: read_data.len(),
                 }
@@ -277,7 +277,7 @@ impl StLinkUsb for STLinkUSBDevice {
         timeout: Duration,
     ) -> Result<usize, DebugProbeError> {
         log::trace!(
-            "Reading {:?} SWO bytes to STLink, timeout: {:?}",
+            "Reading {:?} SWO bytes to ICDI, timeout: {:?}",
             read_data.len(),
             timeout
         );
@@ -298,14 +298,14 @@ impl StLinkUsb for STLinkUSBDevice {
     /// Reset the USB device. This can be used to recover when the
     /// STLink does not respond to USB requests.
     fn reset(&mut self) -> Result<(), DebugProbeError> {
-        log::debug!("Resetting USB device of STLink");
+        log::debug!("Resetting USB device of ICDI");
         self.device_handle
             .reset()
             .map_err(|e| DebugProbeError::USB(Some(Box::new(e))))
     }
 }
 
-impl Drop for STLinkUSBDevice {
+impl Drop for ICDIUSBDevice {
     fn drop(&mut self) {
         // We ignore the error case as we can't do much about it anyways.
         let _ = self.close();
