@@ -7,7 +7,7 @@ use super::usb_interface::USB_PID_EP_MAP;
 use super::usb_interface::USB_VID;
 use std::time::Duration;
 
-pub(super) fn is_stlink_device<T: UsbContext>(device: &Device<T>) -> bool {
+pub(super) fn is_icdi_device<T: UsbContext>(device: &Device<T>) -> bool {
     // Check the VID/PID.
     if let Ok(descriptor) = device.device_descriptor() {
         (descriptor.vendor_id() == USB_VID)
@@ -17,12 +17,12 @@ pub(super) fn is_stlink_device<T: UsbContext>(device: &Device<T>) -> bool {
     }
 }
 
-pub fn list_stlink_devices() -> Vec<DebugProbeInfo> {
+pub fn list_icdi_devices() -> Vec<DebugProbeInfo> {
     if let Ok(context) = rusb::Context::new() {
         if let Ok(devices) = context.devices() {
             devices
                 .iter()
-                .filter(is_stlink_device)
+                .filter(is_icdi_device)
                 .filter_map(|device| {
                     let descriptor = device.device_descriptor().ok()?;
 
@@ -45,13 +45,13 @@ pub fn list_stlink_devices() -> Vec<DebugProbeInfo> {
 
                     Some(DebugProbeInfo::new(
                         format!(
-                            "STLink {}",
+                            "ICDI {}",
                             &USB_PID_EP_MAP[&descriptor.product_id()].version_name
                         ),
                         descriptor.vendor_id(),
                         descriptor.product_id(),
                         sn_str,
-                        DebugProbeType::STLink,
+                        DebugProbeType::ICDI,
                     ))
                 })
                 .collect::<Vec<_>>()
