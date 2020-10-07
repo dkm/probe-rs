@@ -13,7 +13,7 @@ use crate::{
         communication_interface::{ArmCommunicationInterfaceState, ArmProbeInterface},
         dp::{DPAccess, DPBankSel, DPRegister, DebugPortError, Select},
         memory::Component,
-        ApInformation, ArmChipInfo, SwoAccess, SwoConfig, SwoMode,
+        ApInformation, ArmChipInfo, SwoAccess, SwoConfig, 
     },
     DebugProbeSelector, Error as ProbeRsError, Memory, MemoryInterface, Probe,
 };
@@ -28,10 +28,8 @@ pub struct ICDI<D: IcdiUsb> {
     device: D,
     hw_version: u8,
     jtag_version: u8,
-    protocol: WireProtocol,
-    swd_speed_khz: u32,
-    jtag_speed_khz: u32,
-    swo_enabled: bool,
+//    protocol: WireProtocol,
+    speed_khz: u32,
 
     /// List of opened APs
     openend_aps: Vec<u8>,
@@ -45,10 +43,9 @@ impl DebugProbe for ICDI<ICDIUSBDevice> {
             device: ICDIUSBDevice::new_from_selector(selector)?,
             hw_version: 0,
             jtag_version: 0,
-            protocol: WireProtocol::Swd,
-            swd_speed_khz: 1_800,
-            jtag_speed_khz: 1_120,
-            swo_enabled: false,
+  //          protocol: WireProtocol::Swd,
+//            swd_speed_khz: 1_800,
+            speed_khz: 1_120,
 
             openend_aps: vec![],
         };
@@ -63,78 +60,72 @@ impl DebugProbe for ICDI<ICDIUSBDevice> {
     }
 
     fn speed(&self) -> u32 {
-        match self.protocol {
-            WireProtocol::Swd => self.swd_speed_khz,
-            WireProtocol::Jtag => self.jtag_speed_khz,
-        }
+        self.speed_khz
     }
 
     fn set_speed(&mut self, speed_khz: u32) -> Result<u32, DebugProbeError> {
-        match self.hw_version.cmp(&3) {
-            Ordering::Less => match self.protocol {
-                WireProtocol::Swd => {
-                    let actual_speed = SwdFrequencyToDelayCount::find_setting(speed_khz);
+        self.speed_khz = speed_khz;
+        // TODO
+        Ok(speed_khz)
+//         match self.hw_version.cmp(&3) {
+//             Ordering::Less => { // match self.protocol {
+//                 // WireProtocol::Swd => {
+//                 //     let actual_speed = SwdFrequencyToDelayCount::find_setting(speed_khz);
 
-                    if let Some(actual_speed) = actual_speed {
-                        self.set_swd_frequency(actual_speed)?;
+//                 //     if let Some(actual_speed) = actual_speed {
+//                 //         self.set_swd_frequency(actual_speed)?;
 
-                        self.swd_speed_khz = actual_speed.to_khz();
+//                 //         self.swd_speed_khz = actual_speed.to_khz();
 
-                        Ok(actual_speed.to_khz())
-                    } else {
-                        Err(DebugProbeError::UnsupportedSpeed(speed_khz))
-                    }
-                }
-                WireProtocol::Jtag => {
-                    let actual_speed = JTagFrequencyToDivider::find_setting(speed_khz);
+//                 //         Ok(actual_speed.to_khz())
+//                 //     } else {
+//                 //         Err(DebugProbeError::UnsupportedSpeed(speed_khz))
+//                 //     }
+//                 // }
+//                 // WireProtocol::Jtag => {
+//                     let actual_speed = JTagFrequencyToDivider::find_setting(speed_khz);
 
-                    if let Some(actual_speed) = actual_speed {
-                        self.set_jtag_frequency(actual_speed)?;
+//                     if let Some(actual_speed) = actual_speed {
+//                         self.set_jtag_frequency(actual_speed)?;
 
-                        self.jtag_speed_khz = actual_speed.to_khz();
+//                         self.speed_khz = actual_speed.to_khz();
 
-                        Ok(actual_speed.to_khz())
-                    } else {
-                        Err(DebugProbeError::UnsupportedSpeed(speed_khz))
-                    }
-                }
-            },
-            Ordering::Equal => {
-                let (available, _) = self.get_communication_frequencies(self.protocol)?;
+//                         Ok(actual_speed.to_khz())
+//                     } else {
+//                         Err(DebugProbeError::UnsupportedSpeed(speed_khz))
+//                     }
+//                 // }
+//             },
 
-                let actual_speed_khz = available
-                    .into_iter()
-                    .filter(|speed| *speed <= speed_khz)
-                    .max()
-                    .ok_or(DebugProbeError::UnsupportedSpeed(speed_khz))?;
+//             Ordering::Equal => {
+//                 // let (available, _) = self.get_communication_frequencies(self.protocol)?;
 
-                self.set_communication_frequency(self.protocol, actual_speed_khz)?;
+//                 // let actual_speed_khz = available
+//                 //     .into_iter()
+//                 //     .filter(|speed| *speed <= speed_khz)
+//                 //     .max()
+//                 //     .ok_or(DebugProbeError::UnsupportedSpeed(speed_khz))?;
 
-                match self.protocol {
-                    WireProtocol::Swd => self.swd_speed_khz = actual_speed_khz,
-                    WireProtocol::Jtag => self.jtag_speed_khz = actual_speed_khz,
-                }
+// //                self.set_communication_frequency(self.protocol, actual_speed_khz)?;
 
-                Ok(actual_speed_khz)
-            }
-            Ordering::Greater => unimplemented!(),
-        }
+//                 self.jtag_speed_khz = actual_speed_khz;
+//                 // match self.protocol {
+//                 //     // WireProtocol::Swd => self.swd_speed_khz = actual_speed_khz,
+//                 //     WireProtocol::Jtag => self.jtag_speed_khz = actual_speed_khz,
+//                 // }
+
+//                 Ok(actual_speed_khz)
+//             }
+//             Ordering::Greater => unimplemented!(),
+//         }
     }
 
     fn attach(&mut self) -> Result<(), DebugProbeError> {
-        log::debug!("attach({:?})", self.protocol);
+        log::debug!("attach");
         self.enter_idle()?;
 
-        let param = match self.protocol {
-            WireProtocol::Jtag => {
-                log::debug!("Switching protocol to JTAG");
-                commands::JTAG_ENTER_JTAG_NO_CORE_RESET
-            }
-            WireProtocol::Swd => {
-                log::debug!("Switching protocol to SWD");
-                commands::JTAG_ENTER_SWD
-            }
-        };
+        log::debug!("Switching protocol to JTAG");
+        let param = commands::JTAG_ENTER_JTAG_NO_CORE_RESET;
 
         let mut buf = [0; 2];
         self.send_jtag_command(
@@ -151,24 +142,17 @@ impl DebugProbe for ICDI<ICDIUSBDevice> {
         //
         // To ensure the default speed is used if not changed,
         // we set the speed again here.
-        match self.protocol {
-            WireProtocol::Jtag => {
-                self.set_speed(self.jtag_speed_khz)?;
-            }
-            WireProtocol::Swd => {
-                self.set_speed(self.swd_speed_khz)?;
-            }
-        }
+        self.set_speed(self.speed_khz)?;
 
         Ok(())
     }
 
     fn detach(&mut self) -> Result<(), DebugProbeError> {
         log::debug!("Detaching from ICDI.");
-        if self.swo_enabled {
-            self.disable_swo()
-                .map_err(|e| DebugProbeError::ProbeSpecific(e.into()))?;
-        }
+        // if self.swo_enabled {
+        //     self.disable_swo()
+        //         .map_err(|e| DebugProbeError::ProbeSpecific(e.into()))?;
+        // }
         self.enter_idle()
     }
 
@@ -215,27 +199,28 @@ impl DebugProbe for ICDI<ICDIUSBDevice> {
     }
 
     fn select_protocol(&mut self, protocol: WireProtocol) -> Result<(), DebugProbeError> {
-        match protocol {
-            WireProtocol::Jtag => self.protocol = WireProtocol::Jtag,
-            WireProtocol::Swd => self.protocol = WireProtocol::Swd,
+        if protocol != WireProtocol::Jtag {
+            Err(DebugProbeError::UnsupportedProtocol(protocol))
+        } else {
+            Ok(())
         }
-        Ok(())
     }
 
     fn get_swo_interface(&self) -> Option<&dyn SwoAccess> {
-        Some(self as _)
+        None
     }
 
     fn get_swo_interface_mut(&mut self) -> Option<&mut dyn SwoAccess> {
-        Some(self as _)
+        None
     }
 
     fn get_arm_interface<'probe>(
         self: Box<Self>,
     ) -> Result<Option<Box<dyn ArmProbeInterface + 'probe>>, DebugProbeError> {
-        let interface = IcdiArmDebug::new(self)?;
+        Err(IcdiError::UnknownMode.into())
+        // let interface = IcdiArmDebug::new(self)?;
 
-        Ok(Some(Box::new(interface)))
+        // Ok(Some(Box::new(interface)))
     }
 
     fn has_arm_interface(&self) -> bool {
@@ -334,9 +319,9 @@ impl<'a> AsMut<dyn DebugProbe + 'a> for ICDI<ICDIUSBDevice> {
 impl<D: IcdiUsb> Drop for ICDI<D> {
     fn drop(&mut self) {
         // We ignore the error cases as we can't do much about it anyways.
-        if self.swo_enabled {
-            let _ = self.disable_swo();
-        }
+        // if self.swo_enabled {
+        //     let _ = self.disable_swo();
+        // }
         let _ = self.enter_idle();
     }
 }
@@ -512,13 +497,13 @@ impl<D: IcdiUsb> ICDI<D> {
         let version = self.get_version()?;
         log::debug!("ICDI version: {:?}", version);
 
-        if self.hw_version == 3 {
-            let (_, current) = self.get_communication_frequencies(WireProtocol::Swd)?;
-            self.swd_speed_khz = current;
+        // if self.hw_version == 3 {
+        //     let (_, current) = self.get_communication_frequencies(WireProtocol::Swd)?;
+        //     self.swd_speed_khz = current;
 
-            let (_, current) = self.get_communication_frequencies(WireProtocol::Jtag)?;
-            self.jtag_speed_khz = current;
-        }
+        //     let (_, current) = self.get_communication_frequencies(WireProtocol::Jtag)?;
+        //     self.jtag_speed_khz = current;
+        // }
 
         self.get_target_voltage().map(|_| ())
     }
@@ -560,62 +545,62 @@ impl<D: IcdiUsb> ICDI<D> {
     }
 
     /// Sets the communication frequency (V3 only)
-    fn set_communication_frequency(
-        &mut self,
-        protocol: WireProtocol,
-        frequency_khz: u32,
-    ) -> Result<(), DebugProbeError> {
-        if self.hw_version != 3 {
-            return Err(DebugProbeError::CommandNotSupportedByProbe);
-        }
+    // fn set_communication_frequency(
+    //     &mut self,
+    //     protocol: WireProtocol,
+    //     frequency_khz: u32,
+    // ) -> Result<(), DebugProbeError> {
+    //     if self.hw_version != 3 {
+    //         return Err(DebugProbeError::CommandNotSupportedByProbe);
+    //     }
 
-        let cmd_proto = match protocol {
-            WireProtocol::Swd => 0,
-            WireProtocol::Jtag => 1,
-        };
+    //     let cmd_proto = match protocol {
+    //         WireProtocol::Swd => 0,
+    //         WireProtocol::Jtag => 1,
+    //     };
 
-        let mut command = vec![commands::JTAG_COMMAND, commands::SET_COM_FREQ, cmd_proto, 0];
-        command.extend_from_slice(&frequency_khz.to_le_bytes());
+    //     let mut command = vec![commands::JTAG_COMMAND, commands::SET_COM_FREQ, cmd_proto, 0];
+    //     command.extend_from_slice(&frequency_khz.to_le_bytes());
 
-        let mut buf = [0; 8];
-        self.send_jtag_command(&command, &[], &mut buf, TIMEOUT)
-    }
+    //     let mut buf = [0; 8];
+    //     self.send_jtag_command(&command, &[], &mut buf, TIMEOUT)
+    // }
 
     /// Returns the current and available communication frequencies (V3 only)
-    fn get_communication_frequencies(
-        &mut self,
-        protocol: WireProtocol,
-    ) -> Result<(Vec<u32>, u32), DebugProbeError> {
-        if self.hw_version != 3 {
-            return Err(DebugProbeError::CommandNotSupportedByProbe);
-        }
+    // fn get_communication_frequencies(
+    //     &mut self,
+    //     protocol: WireProtocol,
+    // ) -> Result<(Vec<u32>, u32), DebugProbeError> {
+    //     if self.hw_version != 3 {
+    //         return Err(DebugProbeError::CommandNotSupportedByProbe);
+    //     }
 
-        let cmd_proto = match protocol {
-            WireProtocol::Swd => 0,
-            WireProtocol::Jtag => 1,
-        };
+    //     let cmd_proto = match protocol {
+    //         WireProtocol::Swd => 0,
+    //         WireProtocol::Jtag => 1,
+    //     };
 
-        let mut buf = [0; 52];
-        self.send_jtag_command(
-            &[commands::JTAG_COMMAND, commands::GET_COM_FREQ, cmd_proto],
-            &[],
-            &mut buf,
-            TIMEOUT,
-        )?;
+    //     let mut buf = [0; 52];
+    //     self.send_jtag_command(
+    //         &[commands::JTAG_COMMAND, commands::GET_COM_FREQ, cmd_proto],
+    //         &[],
+    //         &mut buf,
+    //         TIMEOUT,
+    //     )?;
 
-        let mut values = (&buf)
-            .chunks(4)
-            .map(|chunk| chunk.pread_with::<u32>(0, LE).unwrap())
-            .collect::<Vec<u32>>();
+    //     let mut values = (&buf)
+    //         .chunks(4)
+    //         .map(|chunk| chunk.pread_with::<u32>(0, LE).unwrap())
+    //         .collect::<Vec<u32>>();
 
-        let current = values[1];
-        let n = core::cmp::min(values[2], 10) as usize;
+    //     let current = values[1];
+    //     let n = core::cmp::min(values[2], 10) as usize;
 
-        values.rotate_left(3);
-        values.truncate(n);
+    //     values.rotate_left(3);
+    //     values.truncate(n);
 
-        Ok((values, current))
-    }
+    //     Ok((values, current))
+    // }
 
     /// Select an AP to use
     ///
@@ -728,7 +713,7 @@ impl<D: IcdiUsb> ICDI<D> {
 
         self.send_jtag_command(&command, &[], &mut buf, TIMEOUT)?;
 
-        self.swo_enabled = true;
+        // self.swo_enabled = true;
 
         Ok(())
     }
@@ -743,7 +728,7 @@ impl<D: IcdiUsb> ICDI<D> {
             TIMEOUT,
         )?;
 
-        self.swo_enabled = false;
+        // self.swo_enabled = false;
 
         Ok(())
     }
@@ -764,14 +749,14 @@ impl<D: IcdiUsb> ICDI<D> {
     }
 
     /// Reads the actual data from the SWO buffer on the ST-Link.
-    fn read_swo_data(&mut self, timeout: Duration) -> Result<Vec<u8>, DebugProbeError> {
-        // The byte count always needs to be polled first, otherwise
-        // the ST-Link won't return any data.
-        let mut buf = vec![0; self.read_swo_available_byte_count()?];
-        let bytes_read = self.device.read_swo(&mut buf, timeout)?;
-        buf.truncate(bytes_read);
-        Ok(buf)
-    }
+    // fn read_swo_data(&mut self, timeout: Duration) -> Result<Vec<u8>, DebugProbeError> {
+    //     // The byte count always needs to be polled first, otherwise
+    //     // the ST-Link won't return any data.
+    //     let mut buf = vec![0; self.read_swo_available_byte_count()?];
+    //     let bytes_read = self.device.read_swo(&mut buf, timeout)?;
+    //     buf.truncate(bytes_read);
+    //     Ok(buf)
+    // }
 
     fn get_last_rw_status(&mut self) -> Result<(), DebugProbeError> {
         let mut receive_buffer = [0u8; 12];
@@ -1036,30 +1021,30 @@ impl<D: IcdiUsb> ICDI<D> {
     }
 }
 
-impl<D: IcdiUsb> SwoAccess for ICDI<D> {
-    fn enable_swo(&mut self, config: &SwoConfig) -> Result<(), ProbeRsError> {
-        match config.mode() {
-            SwoMode::UART => {
-                self.start_trace_reception(config)?;
-                Ok(())
-            }
-            SwoMode::Manchester => Err(DebugProbeError::ProbeSpecific(
-                IcdiError::ManchesterSwoNotSupported.into(),
-            )
-            .into()),
-        }
-    }
+// impl<D: IcdiUsb> SwoAccess for ICDI<D> {
+//     fn enable_swo(&mut self, config: &SwoConfig) -> Result<(), ProbeRsError> {
+//         match config.mode() {
+//             SwoMode::UART => {
+//                 self.start_trace_reception(config)?;
+//                 Ok(())
+//             }
+//             SwoMode::Manchester => Err(DebugProbeError::ProbeSpecific(
+//                 IcdiError::ManchesterSwoNotSupported.into(),
+//             )
+//             .into()),
+//         }
+//     }
 
-    fn disable_swo(&mut self) -> Result<(), ProbeRsError> {
-        self.stop_trace_reception()?;
-        Ok(())
-    }
+//     fn disable_swo(&mut self) -> Result<(), ProbeRsError> {
+//         self.stop_trace_reception()?;
+//         Ok(())
+//     }
 
-    fn read_swo_timeout(&mut self, timeout: Duration) -> Result<Vec<u8>, ProbeRsError> {
-        let data = self.read_swo_data(timeout)?;
-        Ok(data)
-    }
-}
+//     fn read_swo_timeout(&mut self, timeout: Duration) -> Result<Vec<u8>, ProbeRsError> {
+//         let data = self.read_swo_data(timeout)?;
+//         Ok(data)
+//     }
+// }
 
 #[derive(Error, Debug)]
 pub(crate) enum IcdiError {
@@ -1391,68 +1376,68 @@ impl DPAccess for IcdiArmDebug {
     }
 }
 
-impl<'probe> ArmProbeInterface for IcdiArmDebug {
-    fn memory_interface(&mut self, access_port: MemoryAP) -> Result<Memory<'_>, ProbeRsError> {
-        let interface = IcdiMemoryInterface {
-            probe: self,
-            access_port,
-        };
+// impl<'probe> ArmProbeInterface for IcdiArmDebug {
+//     fn memory_interface(&mut self, access_port: MemoryAP) -> Result<Memory<'_>, ProbeRsError> {
+//         let interface = IcdiMemoryInterface {
+//             probe: self,
+//             access_port,
+//         };
 
-        Ok(Memory::new(interface))
-    }
+//         Ok(Memory::new(interface))
+//     }
 
-    fn ap_information(
-        &self,
-        access_port: crate::architecture::arm::ap::GenericAP,
-    ) -> Option<&crate::architecture::arm::communication_interface::ApInformation> {
-        self.state
-            .ap_information
-            .get(access_port.port_number() as usize)
-    }
+//     fn ap_information(
+//         &self,
+//         access_port: crate::architecture::arm::ap::GenericAP,
+//     ) -> Option<&crate::architecture::arm::communication_interface::ApInformation> {
+//         self.state
+//             .ap_information
+//             .get(access_port.port_number() as usize)
+//     }
 
-    fn read_from_rom_table(
-        &mut self,
-    ) -> Result<Option<crate::architecture::arm::ArmChipInfo>, ProbeRsError> {
-        for access_port in valid_access_ports(self) {
-            let idr = self
-                .read_ap_register(access_port, IDR::default())
-                .map_err(ProbeRsError::Probe)?;
-            log::debug!("{:#x?}", idr);
+//     fn read_from_rom_table(
+//         &mut self,
+//     ) -> Result<Option<crate::architecture::arm::ArmChipInfo>, ProbeRsError> {
+//         for access_port in valid_access_ports(self) {
+//             let idr = self
+//                 .read_ap_register(access_port, IDR::default())
+//                 .map_err(ProbeRsError::Probe)?;
+//             log::debug!("{:#x?}", idr);
 
-            if idr.CLASS == APClass::MEMAP {
-                let access_port: MemoryAP = access_port.into();
+//             if idr.CLASS == APClass::MEMAP {
+//                 let access_port: MemoryAP = access_port.into();
 
-                let baseaddr = access_port.base_address(self)?;
+//                 let baseaddr = access_port.base_address(self)?;
 
-                let mut memory = self
-                    .memory_interface(access_port)
-                    .map_err(ProbeRsError::architecture_specific)?;
+//                 let mut memory = self
+//                     .memory_interface(access_port)
+//                     .map_err(ProbeRsError::architecture_specific)?;
 
-                let component = Component::try_parse(&mut memory, baseaddr)
-                    .map_err(ProbeRsError::architecture_specific)?;
+//                 let component = Component::try_parse(&mut memory, baseaddr)
+//                     .map_err(ProbeRsError::architecture_specific)?;
 
-                if let Component::Class1RomTable(component_id, _) = component {
-                    if let Some(jep106) = component_id.peripheral_id().jep106() {
-                        return Ok(Some(ArmChipInfo {
-                            manufacturer: jep106,
-                            part: component_id.peripheral_id().part(),
-                        }));
-                    }
-                }
-            }
-        }
+//                 if let Component::Class1RomTable(component_id, _) = component {
+//                     if let Some(jep106) = component_id.peripheral_id().jep106() {
+//                         return Ok(Some(ArmChipInfo {
+//                             manufacturer: jep106,
+//                             part: component_id.peripheral_id().part(),
+//                         }));
+//                     }
+//                 }
+//             }
+//         }
 
-        Ok(None)
-    }
+//         Ok(None)
+//     }
 
-    fn num_access_ports(&self) -> usize {
-        self.state.ap_information.len()
-    }
+//     fn num_access_ports(&self) -> usize {
+//         self.state.ap_information.len()
+//     }
 
-    fn close(self: Box<Self>) -> Probe {
-        Probe::from_attached_probe(self.probe)
-    }
-}
+//     fn close(self: Box<Self>) -> Probe {
+//         Probe::from_attached_probe(self.probe)
+//     }
+// }
 
 impl<AP, R> APAccess<AP, R> for IcdiArmDebug
 where
@@ -1500,19 +1485,19 @@ impl<'a> AsMut<dyn DebugProbe + 'a> for IcdiArmDebug {
     }
 }
 
-impl SwoAccess for IcdiArmDebug {
-    fn enable_swo(&mut self, config: &SwoConfig) -> Result<(), ProbeRsError> {
-        self.probe.enable_swo(config)
-    }
+// impl SwoAccess for IcdiArmDebug {
+//     fn enable_swo(&mut self, config: &SwoConfig) -> Result<(), ProbeRsError> {
+//         self.probe.enable_swo(config)
+//     }
 
-    fn disable_swo(&mut self) -> Result<(), ProbeRsError> {
-        self.probe.disable_swo()
-    }
+//     fn disable_swo(&mut self) -> Result<(), ProbeRsError> {
+//         self.probe.disable_swo()
+//     }
 
-    fn read_swo_timeout(&mut self, timeout: Duration) -> Result<Vec<u8>, ProbeRsError> {
-        self.probe.read_swo_timeout(timeout)
-    }
-}
+//     fn read_swo_timeout(&mut self, timeout: Duration) -> Result<Vec<u8>, ProbeRsError> {
+//         self.probe.read_swo_timeout(timeout)
+//     }
+// }
 
 #[derive(Debug)]
 struct IcdiMemoryInterface<'probe> {

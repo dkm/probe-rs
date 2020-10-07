@@ -24,7 +24,7 @@ lazy_static! {
     /// Map of USB PID to firmware version name and device endpoints.
     pub static ref USB_PID_EP_MAP: HashMap<u16, ICDIInfo> = {
         let mut m = HashMap::new();
-        m.insert(0x00fd, ICDIInfo::new("V2",    0x00fd, 0x02,   0x81,   0x83));
+        m.insert(0x00fd, ICDIInfo::new("Unknown-Version",    0x00fd));
         // m.insert(0x374b, STLinkInfo::new("V2-1",  0x374b, 0x01,   0x81,   0x82));
         // m.insert(0x374a, STLinkInfo::new("V2-1",  0x374a, 0x01,   0x81,   0x82));  // Audio
         // m.insert(0x3742, STLinkInfo::new("V2-1",  0x3742, 0x01,   0x81,   0x82));  // No MSD
@@ -41,25 +41,25 @@ lazy_static! {
 pub struct ICDIInfo {
     pub version_name: String,
     pub usb_pid: u16,
-    ep_out: u8,
-    ep_in: u8,
-    ep_swo: u8,
+    // ep_out: u8,
+    // ep_in: u8,
+    // ep_swo: u8,
 }
 
 impl ICDIInfo {
     pub fn new<V: Into<String>>(
         version_name: V,
         usb_pid: u16,
-        ep_out: u8,
-        ep_in: u8,
-        ep_swo: u8,
+        // ep_out: u8,
+        // ep_in: u8,
+        // ep_swo: u8,
     ) -> Self {
         Self {
             version_name: version_name.into(),
             usb_pid,
-            ep_out,
-            ep_in,
-            ep_swo,
+            // ep_out,
+            // ep_in,
+            // ep_swo,
         }
     }
 }
@@ -91,11 +91,11 @@ pub trait IcdiUsb: std::fmt::Debug {
     /// STLink does not respond to USB requests.
     fn reset(&mut self) -> Result<(), DebugProbeError>;
 
-    fn read_swo(
-        &mut self,
-        read_data: &mut [u8],
-        timeout: Duration,
-    ) -> Result<usize, DebugProbeError>;
+    // fn read_swo(
+    //     &mut self,
+    //     read_data: &mut [u8],
+    //     timeout: Duration,
+    // ) -> Result<usize, DebugProbeError>;
 }
 
 impl ICDIUSBDevice {
@@ -103,6 +103,7 @@ impl ICDIUSBDevice {
     pub fn new_from_selector(
         selector: impl Into<DebugProbeSelector>,
     ) -> Result<Self, ProbeCreationError> {
+        log::debug!("starting");
         let selector = selector.into();
 
         let context = Context::new()?;
@@ -151,39 +152,41 @@ impl ICDIUSBDevice {
 
         let info = USB_PID_EP_MAP[&descriptor.product_id()].clone();
 
-        device_handle.claim_interface(0)?;
+        log::debug!("Going to claim interface");
 
-        log::debug!("Claimed interface 0 of USB device.");
+        device_handle.claim_interface(2).unwrap();
+
+        log::debug!("Claimed interface 2 of USB device.");
 
         let mut endpoint_out = false;
         let mut endpoint_in = false;
         let mut endpoint_swo = false;
 
-        if let Some(interface) = config.interfaces().next() {
-            if let Some(descriptor) = interface.descriptors().next() {
-                for endpoint in descriptor.endpoint_descriptors() {
-                    if endpoint.address() == info.ep_out {
-                        endpoint_out = true;
-                    } else if endpoint.address() == info.ep_in {
-                        endpoint_in = true;
-                    } else if endpoint.address() == info.ep_swo {
-                        endpoint_swo = true;
-                    }
-                }
-            }
-        }
+        // if let Some(interface) = config.interfaces().next() {
+        //     if let Some(descriptor) = interface.descriptors().next() {
+        //         for endpoint in descriptor.endpoint_descriptors() {
+        //             if endpoint.address() == info.ep_out {
+        //                 endpoint_out = true;
+        //             } else if endpoint.address() == info.ep_in {
+        //                 endpoint_in = true;
+        //             } else if endpoint.address() == info.ep_swo {
+        //                 endpoint_swo = true;
+        //             }
+        //         }
+        //     }
+        // }
 
-        if !endpoint_out {
-            return Err(IcdiError::EndpointNotFound.into());
-        }
+        // if !endpoint_out {
+        //     return Err(IcdiError::EndpointNotFound.into());
+        // }
 
-        if !endpoint_in {
-            return Err(IcdiError::EndpointNotFound.into());
-        }
+        // if !endpoint_in {
+        //     return Err(IcdiError::EndpointNotFound.into());
+        // }
 
-        if !endpoint_swo {
-            return Err(IcdiError::EndpointNotFound.into());
-        }
+        // if !endpoint_swo {
+        //     return Err(IcdiError::EndpointNotFound.into());
+        // }
 
         let usb_stlink = Self {
             device_handle,
@@ -221,79 +224,79 @@ impl IcdiUsb for ICDIUSBDevice {
         );
 
         // Command phase.
-        assert!(cmd.len() <= CMD_LEN);
-        let mut padded_cmd = [0u8; CMD_LEN];
-        padded_cmd[..cmd.len()].copy_from_slice(cmd);
+        // assert!(cmd.len() <= CMD_LEN);
+        // let mut padded_cmd = [0u8; CMD_LEN];
+        // padded_cmd[..cmd.len()].copy_from_slice(cmd);
 
-        let ep_out = self.info.ep_out;
-        let ep_in = self.info.ep_in;
+        // // let ep_out = self.info.ep_out;
+        // // let ep_in = self.info.ep_in;
 
-        let written_bytes = self
-            .device_handle
-            .write_bulk(ep_out, &padded_cmd, timeout)
-            .map_err(|e| DebugProbeError::USB(Some(Box::new(e))))?;
+        // let written_bytes = self
+        //     .device_handle
+        //     .write_bulk(ep_out, &padded_cmd, timeout)
+        //     .map_err(|e| DebugProbeError::USB(Some(Box::new(e))))?;
 
-        if written_bytes != CMD_LEN {
-            return Err(IcdiError::NotEnoughBytesRead {
-                is: written_bytes,
-                should: CMD_LEN,
-            }
-            .into());
-        }
-        // Optional data out phase.
-        if !write_data.is_empty() {
-            let written_bytes = self
-                .device_handle
-                .write_bulk(ep_out, write_data, timeout)
-                .map_err(|e| DebugProbeError::USB(Some(Box::new(e))))?;
-            if written_bytes != write_data.len() {
-                return Err(IcdiError::NotEnoughBytesRead {
-                    is: written_bytes,
-                    should: write_data.len(),
-                }
-                .into());
-            }
-        }
-        // Optional data in phase.
-        if !read_data.is_empty() {
-            let read_bytes = self
-                .device_handle
-                .read_bulk(ep_in, read_data, timeout)
-                .map_err(|e| DebugProbeError::USB(Some(Box::new(e))))?;
-            if read_bytes != read_data.len() {
-                return Err(IcdiError::NotEnoughBytesRead {
-                    is: read_bytes,
-                    should: read_data.len(),
-                }
-                .into());
-            }
-        }
+        // if written_bytes != CMD_LEN {
+        //     return Err(IcdiError::NotEnoughBytesRead {
+        //         is: written_bytes,
+        //         should: CMD_LEN,
+        //     }
+        //     .into());
+        // }
+        // // Optional data out phase.
+        // if !write_data.is_empty() {
+        //     let written_bytes = self
+        //         .device_handle
+        //         .write_bulk(ep_out, write_data, timeout)
+        //         .map_err(|e| DebugProbeError::USB(Some(Box::new(e))))?;
+        //     if written_bytes != write_data.len() {
+        //         return Err(IcdiError::NotEnoughBytesRead {
+        //             is: written_bytes,
+        //             should: write_data.len(),
+        //         }
+        //         .into());
+        //     }
+        // }
+        // // Optional data in phase.
+        // if !read_data.is_empty() {
+        //     let read_bytes = self
+        //         .device_handle
+        //         .read_bulk(ep_in, read_data, timeout)
+        //         .map_err(|e| DebugProbeError::USB(Some(Box::new(e))))?;
+        //     if read_bytes != read_data.len() {
+        //         return Err(IcdiError::NotEnoughBytesRead {
+        //             is: read_bytes,
+        //             should: read_data.len(),
+        //         }
+        //         .into());
+        //     }
+        // }
         Ok(())
     }
 
-    fn read_swo(
-        &mut self,
-        read_data: &mut [u8],
-        timeout: Duration,
-    ) -> Result<usize, DebugProbeError> {
-        log::trace!(
-            "Reading {:?} SWO bytes to ICDI, timeout: {:?}",
-            read_data.len(),
-            timeout
-        );
+    // fn read_swo(
+    //     &mut self,
+    //     read_data: &mut [u8],
+    //     timeout: Duration,
+    // ) -> Result<usize, DebugProbeError> {
+    //     log::trace!(
+    //         "Reading {:?} SWO bytes to ICDI, timeout: {:?}",
+    //         read_data.len(),
+    //         timeout
+    //     );
 
-        let ep_swo = self.info.ep_swo;
+    //     let ep_swo = self.info.ep_swo;
 
-        if read_data.is_empty() {
-            Ok(0)
-        } else {
-            let read_bytes = self
-                .device_handle
-                .read_bulk(ep_swo, read_data, timeout)
-                .map_err(|e| DebugProbeError::USB(Some(Box::new(e))))?;
-            Ok(read_bytes)
-        }
-    }
+    //     if read_data.is_empty() {
+    //         Ok(0)
+    //     } else {
+    //         let read_bytes = self
+    //             .device_handle
+    //             .read_bulk(ep_swo, read_data, timeout)
+    //             .map_err(|e| DebugProbeError::USB(Some(Box::new(e))))?;
+    //         Ok(read_bytes)
+    //     }
+    // }
 
     /// Reset the USB device. This can be used to recover when the
     /// STLink does not respond to USB requests.
