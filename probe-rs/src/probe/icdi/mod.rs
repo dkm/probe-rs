@@ -13,7 +13,7 @@ use crate::{
         communication_interface::{ArmCommunicationInterfaceState, ArmProbeInterface},
         dp::{DPAccess, DPBankSel, DPRegister, DebugPortError, Select},
         memory::Component,
-        ApInformation, ArmChipInfo, SwoAccess, SwoConfig, 
+        ApInformation, ArmChipInfo, SwoAccess, SwoConfig,
     },
     DebugProbeSelector, Error as ProbeRsError, Memory, MemoryInterface, Probe,
 };
@@ -28,7 +28,7 @@ pub struct ICDI<D: IcdiUsb> {
     device: D,
     hw_version: u8,
     jtag_version: u8,
-//    protocol: WireProtocol,
+    //    protocol: WireProtocol,
     speed_khz: u32,
 
     /// List of opened APs
@@ -43,14 +43,14 @@ impl DebugProbe for ICDI<ICDIUSBDevice> {
             device: ICDIUSBDevice::new_from_selector(selector)?,
             hw_version: 0,
             jtag_version: 0,
-  //          protocol: WireProtocol::Swd,
-//            swd_speed_khz: 1_800,
+            //          protocol: WireProtocol::Swd,
+            //            swd_speed_khz: 1_800,
             speed_khz: 1_120,
 
             openend_aps: vec![],
         };
 
-//        icdi.init()?;
+        icdi.init()?;
 
         Ok(Box::new(icdi))
     }
@@ -67,57 +67,57 @@ impl DebugProbe for ICDI<ICDIUSBDevice> {
         self.speed_khz = speed_khz;
         // TODO
         Ok(speed_khz)
-//         match self.hw_version.cmp(&3) {
-//             Ordering::Less => { // match self.protocol {
-//                 // WireProtocol::Swd => {
-//                 //     let actual_speed = SwdFrequencyToDelayCount::find_setting(speed_khz);
+        //         match self.hw_version.cmp(&3) {
+        //             Ordering::Less => { // match self.protocol {
+        //                 // WireProtocol::Swd => {
+        //                 //     let actual_speed = SwdFrequencyToDelayCount::find_setting(speed_khz);
 
-//                 //     if let Some(actual_speed) = actual_speed {
-//                 //         self.set_swd_frequency(actual_speed)?;
+        //                 //     if let Some(actual_speed) = actual_speed {
+        //                 //         self.set_swd_frequency(actual_speed)?;
 
-//                 //         self.swd_speed_khz = actual_speed.to_khz();
+        //                 //         self.swd_speed_khz = actual_speed.to_khz();
 
-//                 //         Ok(actual_speed.to_khz())
-//                 //     } else {
-//                 //         Err(DebugProbeError::UnsupportedSpeed(speed_khz))
-//                 //     }
-//                 // }
-//                 // WireProtocol::Jtag => {
-//                     let actual_speed = JTagFrequencyToDivider::find_setting(speed_khz);
+        //                 //         Ok(actual_speed.to_khz())
+        //                 //     } else {
+        //                 //         Err(DebugProbeError::UnsupportedSpeed(speed_khz))
+        //                 //     }
+        //                 // }
+        //                 // WireProtocol::Jtag => {
+        //                     let actual_speed = JTagFrequencyToDivider::find_setting(speed_khz);
 
-//                     if let Some(actual_speed) = actual_speed {
-//                         self.set_jtag_frequency(actual_speed)?;
+        //                     if let Some(actual_speed) = actual_speed {
+        //                         self.set_jtag_frequency(actual_speed)?;
 
-//                         self.speed_khz = actual_speed.to_khz();
+        //                         self.speed_khz = actual_speed.to_khz();
 
-//                         Ok(actual_speed.to_khz())
-//                     } else {
-//                         Err(DebugProbeError::UnsupportedSpeed(speed_khz))
-//                     }
-//                 // }
-//             },
+        //                         Ok(actual_speed.to_khz())
+        //                     } else {
+        //                         Err(DebugProbeError::UnsupportedSpeed(speed_khz))
+        //                     }
+        //                 // }
+        //             },
 
-//             Ordering::Equal => {
-//                 // let (available, _) = self.get_communication_frequencies(self.protocol)?;
+        //             Ordering::Equal => {
+        //                 // let (available, _) = self.get_communication_frequencies(self.protocol)?;
 
-//                 // let actual_speed_khz = available
-//                 //     .into_iter()
-//                 //     .filter(|speed| *speed <= speed_khz)
-//                 //     .max()
-//                 //     .ok_or(DebugProbeError::UnsupportedSpeed(speed_khz))?;
+        //                 // let actual_speed_khz = available
+        //                 //     .into_iter()
+        //                 //     .filter(|speed| *speed <= speed_khz)
+        //                 //     .max()
+        //                 //     .ok_or(DebugProbeError::UnsupportedSpeed(speed_khz))?;
 
-// //                self.set_communication_frequency(self.protocol, actual_speed_khz)?;
+        // //                self.set_communication_frequency(self.protocol, actual_speed_khz)?;
 
-//                 self.jtag_speed_khz = actual_speed_khz;
-//                 // match self.protocol {
-//                 //     // WireProtocol::Swd => self.swd_speed_khz = actual_speed_khz,
-//                 //     WireProtocol::Jtag => self.jtag_speed_khz = actual_speed_khz,
-//                 // }
+        //                 self.jtag_speed_khz = actual_speed_khz;
+        //                 // match self.protocol {
+        //                 //     // WireProtocol::Swd => self.swd_speed_khz = actual_speed_khz,
+        //                 //     WireProtocol::Jtag => self.jtag_speed_khz = actual_speed_khz,
+        //                 // }
 
-//                 Ok(actual_speed_khz)
-//             }
-//             Ordering::Greater => unimplemented!(),
-//         }
+        //                 Ok(actual_speed_khz)
+        //             }
+        //             Ordering::Greater => unimplemented!(),
+        //         }
     }
 
     fn attach(&mut self) -> Result<(), DebugProbeError> {
@@ -231,28 +231,29 @@ impl DebugProbe for ICDI<ICDIUSBDevice> {
 impl DAPAccess for ICDI<ICDIUSBDevice> {
     /// Reads the DAP register on the specified port and address.
     fn read_register(&mut self, port: PortType, addr: u16) -> Result<u32, DebugProbeError> {
-        if (addr & 0xf0) == 0 || port != PortType::DebugPort {
-            if let PortType::AccessPort(port_number) = port {
-                self.select_ap(port_number as u8)?;
-            }
+        Err(IcdiError::FixMeError.into())
+        // if (addr & 0xf0) == 0 || port != PortType::DebugPort {
+        //     if let PortType::AccessPort(port_number) = port {
+        //         self.select_ap(port_number as u8)?;
+        //     }
 
-            let port: u16 = port.into();
+        //     let port: u16 = port.into();
 
-            let cmd = &[
-                commands::JTAG_COMMAND,
-                commands::JTAG_READ_DAP_REG,
-                (port & 0xFF) as u8,
-                ((port >> 8) & 0xFF) as u8,
-                (addr & 0xFF) as u8,
-                ((addr >> 8) & 0xFF) as u8,
-            ];
-            let mut buf = [0; 8];
-            self.send_jtag_command(cmd, &[], &mut buf, TIMEOUT)?;
-            // Unwrap is ok!
-            Ok((&buf[4..8]).pread_with(0, LE).unwrap())
-        } else {
-            Err(IcdiError::BlanksNotAllowedOnDPRegister.into())
-        }
+        //     let cmd = &[
+        //         commands::JTAG_COMMAND,
+        //         commands::JTAG_READ_DAP_REG,
+        //         (port & 0xFF) as u8,
+        //         ((port >> 8) & 0xFF) as u8,
+        //         (addr & 0xFF) as u8,
+        //         ((addr >> 8) & 0xFF) as u8,
+        //     ];
+        //     let mut buf = [0; 8];
+        //     self.send_jtag_command(cmd, &[], &mut buf, TIMEOUT)?;
+        //     // Unwrap is ok!
+        //     Ok((&buf[4..8]).pread_with(0, LE).unwrap())
+        // } else {
+        //     Err(IcdiError::BlanksNotAllowedOnDPRegister.into())
+        // }
     }
 
     /// Writes a value to the DAP register on the specified port and address.
@@ -322,7 +323,7 @@ impl<D: IcdiUsb> Drop for ICDI<D> {
         // if self.swo_enabled {
         //     let _ = self.disable_swo();
         // }
-        let _ = self.enter_idle();
+//        let _ = self.enter_idle();
     }
 }
 
@@ -346,68 +347,72 @@ impl<D: IcdiUsb> ICDI<D> {
     /// Reads the target voltage.
     /// For the china fake variants this will always read a nonzero value!
     pub fn get_target_voltage(&mut self) -> Result<f32, DebugProbeError> {
-        let mut buf = [0; 8];
-        match self
-            .device
-            .write(&[commands::GET_TARGET_VOLTAGE], &[], &mut buf, TIMEOUT)
-        {
-            Ok(_) => {
-                // The next two unwraps are safe!
-                let a0 = (&buf[0..4]).pread_with::<u32>(0, LE).unwrap() as f32;
-                let a1 = (&buf[4..8]).pread_with::<u32>(0, LE).unwrap() as f32;
-                if a0 != 0.0 {
-                    Ok((2.0 * a1 * 1.2 / a0) as f32)
-                } else {
-                    // Should never happen
-                    Err(IcdiError::VoltageDivisionByZero.into())
-                }
-            }
-            Err(e) => Err(e),
-        }
+        Err(IcdiError::FixMeError.into())
+        // let mut buf = [0; 8];
+        // match self
+        //     .device
+        //     .write(&[commands::GET_TARGET_VOLTAGE], &[], &mut buf, TIMEOUT)
+        // {
+        //     Ok(_) => {
+        //         // The next two unwraps are safe!
+        //         let a0 = (&buf[0..4]).pread_with::<u32>(0, LE).unwrap() as f32;
+        //         let a1 = (&buf[4..8]).pread_with::<u32>(0, LE).unwrap() as f32;
+        //         if a0 != 0.0 {
+        //             Ok((2.0 * a1 * 1.2 / a0) as f32)
+        //         } else {
+        //             // Should never happen
+        //             Err(IcdiError::VoltageDivisionByZero.into())
+        //         }
+        //     }
+        //     Err(e) => Err(e),
+        // }
     }
 
     /// Get the current mode of the ST-Link
     fn get_current_mode(&mut self) -> Result<Mode, DebugProbeError> {
         log::trace!("Getting current mode of device...");
-        let mut buf = [0; 2];
-        self.device
-            .write(&[commands::GET_CURRENT_MODE], &[], &mut buf, TIMEOUT)?;
+        Err(IcdiError::FixMeError.into())
+        // self.device
+        //     .write(&[commands::GET_CURRENT_MODE], &[], &mut buf, TIMEOUT)?;
 
-        use Mode::*;
+        // use Mode::*;
 
-        let mode = match buf[0] {
-            0 => Dfu,
-            1 => MassStorage,
-            2 => Jtag,
-            3 => Swim,
-            _ => return Err(IcdiError::UnknownMode.into()),
-        };
+        // let mode = match buf[0] {
+        //     0 => Dfu,
+        //     1 => MassStorage,
+        //     2 => Jtag,
+        //     3 => Swim,
+        //     _ => return Err(IcdiError::UnknownMode.into()),
+        // };
 
-        log::debug!("Current device mode: {:?}", mode);
+        // log::debug!("Current device mode: {:?}", mode);
 
-        Ok(mode)
+        // Ok(mode)
     }
 
     /// Commands the ST-Link to enter idle mode.
     /// Internal helper.
     fn enter_idle(&mut self) -> Result<(), DebugProbeError> {
-        let mode = self.get_current_mode()?;
+        log::debug!("Will enter idle");
+        Err(IcdiError::FixMeError.into())
+        // let mode = self.get_current_mode()?;
 
-        match mode {
-            Mode::Dfu => self.device.write(
-                &[commands::DFU_COMMAND, commands::DFU_EXIT],
-                &[],
-                &mut [],
-                TIMEOUT,
-            ),
-            Mode::Swim => self.device.write(
-                &[commands::SWIM_COMMAND, commands::SWIM_EXIT],
-                &[],
-                &mut [],
-                TIMEOUT,
-            ),
-            _ => Ok(()),
-        }
+        // log::debug!("Mode is {:?}", mode);
+        // match mode {
+        //     Mode::Dfu => self.device.write(
+        //         &[commands::DFU_COMMAND, commands::DFU_EXIT],
+        //         &[],
+        //         &mut [],
+        //         TIMEOUT,
+        //     ),
+        //     Mode::Swim => self.device.write(
+        //         &[commands::SWIM_COMMAND, commands::SWIM_EXIT],
+        //         &[],
+        //         &mut [],
+        //         TIMEOUT,
+        //     ),
+        //     _ => Ok(()),
+        // }
     }
 
     /// Reads the ST-Links version.
@@ -418,6 +423,19 @@ impl<D: IcdiUsb> ICDI<D> {
         const HW_VERSION_MASK: u8 = 0x0F;
         const JTAG_VERSION_SHIFT: u8 = 6;
         const JTAG_VERSION_MASK: u8 = 0x3F;
+
+        log::debug!("Get version");
+
+        let mut version = [0u8; 10];
+        self.device
+            .write_remote(b"version", &mut version, TIMEOUT)?;
+        let vs = hex::decode(version).unwrap();
+        let v = std::str::from_utf8(&vs).unwrap();
+        log::debug!("version {:?}", v);
+        //            icdi_send_remote_cmd(handle, "version");
+
+        Err(IcdiError::FixMeError.into())
+
         // GET_VERSION response structure:
         //   Byte 0-1:
         //     [15:12] Major/HW version
@@ -425,55 +443,56 @@ impl<D: IcdiUsb> ICDI<D> {
         //     [5:0]   SWIM or MSC version
         //   Byte 2-3: ST_VID
         //   Byte 4-5: STLINK_PID
-        let mut buf = [0; 6];
-        match self
-            .device
-            .write(&[commands::GET_VERSION], &[], &mut buf, TIMEOUT)
-        {
-            Ok(_) => {
-                let version: u16 = (&buf[0..2]).pread_with(0, BE).unwrap();
-                self.hw_version = (version >> HW_VERSION_SHIFT) as u8 & HW_VERSION_MASK;
-                self.jtag_version = (version >> JTAG_VERSION_SHIFT) as u8 & JTAG_VERSION_MASK;
-            }
-            Err(e) => return Err(e),
-        }
 
-        // For the STLinkV3 we must use the extended get version command.
-        if self.hw_version >= 3 {
-            // GET_VERSION_EXT response structure (byte offsets)
-            //  0: HW version
-            //  1: SWIM version
-            //  2: JTAG/SWD version
-            //  3: MSC/VCP version
-            //  4: Bridge version
-            //  5-7: reserved
-            //  8-9: ST_VID
-            //  10-11: STLINK_PID
-            let mut buf = [0; 12];
-            match self
-                .device
-                .write(&[commands::GET_VERSION_EXT], &[], &mut buf, TIMEOUT)
-            {
-                Ok(_) => {
-                    let version: u8 = (&buf[2..3]).pread_with(0, LE).unwrap();
-                    self.jtag_version = version;
-                }
-                Err(e) => return Err(e),
-            }
-        }
+        // let mut buf = [0; 6];
+        // match self
+        //     .device
+        //     .write(&[commands::GET_VERSION], &[], &mut buf, TIMEOUT)
+        // {
+        //     Ok(_) => {
+        //         let version: u16 = (&buf[0..2]).pread_with(0, BE).unwrap();
+        //         self.hw_version = (version >> HW_VERSION_SHIFT) as u8 & HW_VERSION_MASK;
+        //         self.jtag_version = (version >> JTAG_VERSION_SHIFT) as u8 & JTAG_VERSION_MASK;
+        //     }
+        //     Err(e) => return Err(e),
+        // }
 
-        // Make sure everything is okay with the firmware we use.
-        if self.jtag_version == 0 {
-            return Err(IcdiError::JTAGNotSupportedOnProbe.into());
-        }
-        if self.hw_version < 3 && self.jtag_version < Self::MIN_JTAG_VERSION {
-            return Err(DebugProbeError::ProbeFirmwareOutdated);
-        }
-        if self.hw_version == 3 && self.jtag_version < Self::MIN_JTAG_VERSION_V3 {
-            return Err(DebugProbeError::ProbeFirmwareOutdated);
-        }
+        // // For the STLinkV3 we must use the extended get version command.
+        // if self.hw_version >= 3 {
+        //     // GET_VERSION_EXT response structure (byte offsets)
+        //     //  0: HW version
+        //     //  1: SWIM version
+        //     //  2: JTAG/SWD version
+        //     //  3: MSC/VCP version
+        //     //  4: Bridge version
+        //     //  5-7: reserved
+        //     //  8-9: ST_VID
+        //     //  10-11: STLINK_PID
+        //     let mut buf = [0; 12];
+        //     match self
+        //         .device
+        //         .write(&[commands::GET_VERSION_EXT], &[], &mut buf, TIMEOUT)
+        //     {
+        //         Ok(_) => {
+        //             let version: u8 = (&buf[2..3]).pread_with(0, LE).unwrap();
+        //             self.jtag_version = version;
+        //         }
+        //         Err(e) => return Err(e),
+        //     }
+        // }
 
-        Ok((self.hw_version, self.jtag_version))
+        // // Make sure everything is okay with the firmware we use.
+        // if self.jtag_version == 0 {
+        //     return Err(IcdiError::JTAGNotSupportedOnProbe.into());
+        // }
+        // if self.hw_version < 3 && self.jtag_version < Self::MIN_JTAG_VERSION {
+        //     return Err(DebugProbeError::ProbeFirmwareOutdated);
+        // }
+        // if self.hw_version == 3 && self.jtag_version < Self::MIN_JTAG_VERSION_V3 {
+        //     return Err(DebugProbeError::ProbeFirmwareOutdated);
+        // }
+
+        // Ok((self.hw_version, self.jtag_version))
     }
 
     /// Opens the ST-Link USB device and tries to identify the ST-Links version and its target voltage.
@@ -481,19 +500,20 @@ impl<D: IcdiUsb> ICDI<D> {
     fn init(&mut self) -> Result<(), DebugProbeError> {
         log::debug!("Initializing ICDI...");
 
-        if let Err(e) = self.enter_idle() {
-            match e {
-                DebugProbeError::USB(_) => {
-                    // Reset the device, and try to enter idle mode again
-                    self.device.reset()?;
+        // if let Err(e) = self.enter_idle() {
+        //     match e {
+        //         DebugProbeError::USB(_) => {
+        //             // Reset the device, and try to enter idle mode again
+        //             self.device.reset()?;
 
-                    self.enter_idle()?;
-                }
-                // Other error occured, return it
-                _ => return Err(e),
-            }
-        }
+        //             self.enter_idle()?;
+        //         }
+        //         // Other error occured, return it
+        //         _ => return Err(e),
+        //     }
+        // }
 
+        log::debug!("Will get version");
         let version = self.get_version()?;
         log::debug!("ICDI version: {:?}", version);
 
@@ -675,32 +695,33 @@ impl<D: IcdiUsb> ICDI<D> {
         read_data: &mut [u8],
         timeout: Duration,
     ) -> Result<(), DebugProbeError> {
-        for attempt in 0..13 {
-            self.device.write(cmd, write_data, read_data, timeout)?;
+        // for attempt in 0..13 {
+        //     self.device.write(cmd, write_data, read_data, timeout)?;
 
-            match Status::from(read_data[0]) {
-                Status::JtagOk => return Ok(()),
-                Status::SwdDpWait => {
-                    log::warn!("send_jtag_command {} got SwdDpWait, retrying", cmd[0])
-                }
-                Status::SwdApWait => {
-                    log::warn!("send_jtag_command {} got SwdApWait, retrying", cmd[0])
-                }
-                status => {
-                    log::warn!("send_jtag_command {} failed: {:?}", cmd[0], status);
-                    return Err(From::from(IcdiError::CommandFailed(status)));
-                }
-            }
+        //     match Status::from(read_data[0]) {
+        //         Status::JtagOk => return Ok(()),
+        //         Status::SwdDpWait => {
+        //             log::warn!("send_jtag_command {} got SwdDpWait, retrying", cmd[0])
+        //         }
+        //         Status::SwdApWait => {
+        //             log::warn!("send_jtag_command {} got SwdApWait, retrying", cmd[0])
+        //         }
+        //         status => {
+        //             log::warn!("send_jtag_command {} failed: {:?}", cmd[0], status);
+        //             return Err(From::from(IcdiError::CommandFailed(status)));
+        //         }
+        //     }
 
-            // Sleep with exponential backoff.
-            std::thread::sleep(Duration::from_micros(100 << attempt));
-        }
+        //     // Sleep with exponential backoff.
+        //     std::thread::sleep(Duration::from_micros(100 << attempt));
+        // }
 
-        log::warn!("too many retries, giving up");
+        // log::warn!("too many retries, giving up");
 
-        // Return the last error (will be SwdDpWait or SwdApWait)
-        let status = Status::from(read_data[0]);
-        return Err(From::from(IcdiError::CommandFailed(status)));
+        // // Return the last error (will be SwdDpWait or SwdApWait)
+        // let status = Status::from(read_data[0]);
+        // return Err(From::from(IcdiError::CommandFailed(status)));
+        Err(IcdiError::FixMeError.into())
     }
 
     pub fn start_trace_reception(&mut self, config: &SwoConfig) -> Result<(), DebugProbeError> {
@@ -735,17 +756,18 @@ impl<D: IcdiUsb> ICDI<D> {
 
     /// Gets the SWO count from the ST-Link probe.
     fn read_swo_available_byte_count(&mut self) -> Result<usize, DebugProbeError> {
-        let mut buf = [0; 2];
-        self.device.write(
-            &[
-                commands::JTAG_COMMAND,
-                commands::SWO_GET_TRACE_NEW_RECORD_NB,
-            ],
-            &[],
-            &mut buf,
-            TIMEOUT,
-        )?;
-        Ok(buf.pread::<u16>(0).unwrap() as usize)
+        Err(IcdiError::FixMeError.into())
+        // let mut buf = [0; 2];
+        // self.device.write(
+        //     &[
+        //         commands::JTAG_COMMAND,
+        //         commands::SWO_GET_TRACE_NEW_RECORD_NB,
+        //     ],
+        //     &[],
+        //     &mut buf,
+        //     TIMEOUT,
+        // )?;
+        // Ok(buf.pread::<u16>(0).unwrap() as usize)
     }
 
     /// Reads the actual data from the SWO buffer on the ST-Link.
@@ -779,45 +801,46 @@ impl<D: IcdiUsb> ICDI<D> {
             address,
             length
         );
-        // Maximum supported read length is 2^16 bytes.
-        assert!(
-            length < (u16::MAX / 4),
-            "Maximum read length for STLink is 16'384 words"
-        );
+        Err(IcdiError::FixMeError.into())
+        // // Maximum supported read length is 2^16 bytes.
+        // assert!(
+        //     length < (u16::MAX / 4),
+        //     "Maximum read length for STLink is 16'384 words"
+        // );
 
-        if address % 4 != 0 {
-            todo!("Should return an error here");
-        }
+        // if address % 4 != 0 {
+        //     todo!("Should return an error here");
+        // }
 
-        let byte_length = length * 4;
+        // let byte_length = length * 4;
 
-        let mut receive_buffer = vec![0u8; byte_length as usize];
+        // let mut receive_buffer = vec![0u8; byte_length as usize];
 
-        self.device.write(
-            &[
-                commands::JTAG_COMMAND,
-                commands::JTAG_READMEM_32BIT,
-                address as u8,
-                (address >> 8) as u8,
-                (address >> 16) as u8,
-                (address >> 24) as u8,
-                byte_length as u8,
-                (byte_length >> 8) as u8,
-                apsel,
-            ],
-            &[],
-            &mut receive_buffer,
-            TIMEOUT,
-        )?;
+        // self.device.write(
+        //     &[
+        //         commands::JTAG_COMMAND,
+        //         commands::JTAG_READMEM_32BIT,
+        //         address as u8,
+        //         (address >> 8) as u8,
+        //         (address >> 16) as u8,
+        //         (address >> 24) as u8,
+        //         byte_length as u8,
+        //         (byte_length >> 8) as u8,
+        //         apsel,
+        //     ],
+        //     &[],
+        //     &mut receive_buffer,
+        //     TIMEOUT,
+        // )?;
 
-        self.get_last_rw_status()?;
+        // self.get_last_rw_status()?;
 
-        let words: Vec<u32> = receive_buffer
-            .chunks_exact(4)
-            .map(|chunk| u32::from_le_bytes(chunk.try_into().unwrap()))
-            .collect();
+        // let words: Vec<u32> = receive_buffer
+        //     .chunks_exact(4)
+        //     .map(|chunk| u32::from_le_bytes(chunk.try_into().unwrap()))
+        //     .collect();
 
-        Ok(words)
+        // Ok(words)
     }
 
     fn read_mem_8bit(
@@ -827,28 +850,29 @@ impl<D: IcdiUsb> ICDI<D> {
         apsel: u8,
     ) -> Result<Vec<u8>, DebugProbeError> {
         log::debug!("Read mem 8 bit, address={:08x}, length={}", address, length);
-        let mut receive_buffer = vec![0u8; length as usize];
+        Err(IcdiError::FixMeError.into())
+        // let mut receive_buffer = vec![0u8; length as usize];
 
-        self.device.write(
-            &[
-                commands::JTAG_COMMAND,
-                commands::JTAG_READMEM_8BIT,
-                address as u8,
-                (address >> 8) as u8,
-                (address >> 16) as u8,
-                (address >> 24) as u8,
-                length as u8,
-                (length >> 8) as u8,
-                apsel,
-            ],
-            &[],
-            &mut receive_buffer,
-            TIMEOUT,
-        )?;
+        // self.device.write(
+        //     &[
+        //         commands::JTAG_COMMAND,
+        //         commands::JTAG_READMEM_8BIT,
+        //         address as u8,
+        //         (address >> 8) as u8,
+        //         (address >> 16) as u8,
+        //         (address >> 24) as u8,
+        //         length as u8,
+        //         (length >> 8) as u8,
+        //         apsel,
+        //     ],
+        //     &[],
+        //     &mut receive_buffer,
+        //     TIMEOUT,
+        // )?;
 
-        self.get_last_rw_status()?;
+        // self.get_last_rw_status()?;
 
-        Ok(receive_buffer)
+        // Ok(receive_buffer)
     }
 
     fn write_mem_32bit(
@@ -858,50 +882,51 @@ impl<D: IcdiUsb> ICDI<D> {
         apsel: u8,
     ) -> Result<(), DebugProbeError> {
         log::trace!("write_mem_32bit");
-        let length = data.len();
+        Err(IcdiError::FixMeError.into())
+        // let length = data.len();
 
-        // Maximum supported read length is 2^16 bytes.
-        assert!(
-            length < (u16::MAX / 4) as usize,
-            "Maximum write length for STLink is 16'384 words"
-        );
+        // // Maximum supported read length is 2^16 bytes.
+        // assert!(
+        //     length < (u16::MAX / 4) as usize,
+        //     "Maximum write length for STLink is 16'384 words"
+        // );
 
-        if address % 4 != 0 {
-            todo!("Should return an error here");
-        }
+        // if address % 4 != 0 {
+        //     todo!("Should return an error here");
+        // }
 
-        let byte_length = length * 4;
+        // let byte_length = length * 4;
 
-        let mut tx_buffer = vec![0u8; byte_length];
+        // let mut tx_buffer = vec![0u8; byte_length];
 
-        let mut offset = 0;
+        // let mut offset = 0;
 
-        for word in data {
-            tx_buffer
-                .gwrite(word, &mut offset)
-                .expect("Failed to write into tx_buffer");
-        }
+        // for word in data {
+        //     tx_buffer
+        //         .gwrite(word, &mut offset)
+        //         .expect("Failed to write into tx_buffer");
+        // }
 
-        self.device.write(
-            &[
-                commands::JTAG_COMMAND,
-                commands::JTAG_WRITEMEM_32BIT,
-                address as u8,
-                (address >> 8) as u8,
-                (address >> 16) as u8,
-                (address >> 24) as u8,
-                byte_length as u8,
-                (byte_length >> 8) as u8,
-                apsel,
-            ],
-            &tx_buffer,
-            &mut [],
-            TIMEOUT,
-        )?;
+        // self.device.write(
+        //     &[
+        //         commands::JTAG_COMMAND,
+        //         commands::JTAG_WRITEMEM_32BIT,
+        //         address as u8,
+        //         (address >> 8) as u8,
+        //         (address >> 16) as u8,
+        //         (address >> 24) as u8,
+        //         byte_length as u8,
+        //         (byte_length >> 8) as u8,
+        //         apsel,
+        //     ],
+        //     &tx_buffer,
+        //     &mut [],
+        //     TIMEOUT,
+        // )?;
 
-        self.get_last_rw_status()?;
+        // self.get_last_rw_status()?;
 
-        Ok(())
+        // Ok(())
     }
 
     fn write_mem_8bit(
@@ -911,40 +936,41 @@ impl<D: IcdiUsb> ICDI<D> {
         apsel: u8,
     ) -> Result<(), DebugProbeError> {
         log::trace!("write_mem_8bit");
-        let byte_length = data.len();
+        Err(IcdiError::FixMeError.into())
+        // let byte_length = data.len();
 
-        if self.hw_version < 3 {
-            assert!(
-                byte_length <= 64,
-                "8-Bit writes are limited to 64 bytes on ST-Link v2"
-            );
-        } else {
-            assert!(
-                byte_length <= 512,
-                "8-Bit writes are limited to 512 bytes on ST-Link v3"
-            );
-        }
+        // if self.hw_version < 3 {
+        //     assert!(
+        //         byte_length <= 64,
+        //         "8-Bit writes are limited to 64 bytes on ST-Link v2"
+        //     );
+        // } else {
+        //     assert!(
+        //         byte_length <= 512,
+        //         "8-Bit writes are limited to 512 bytes on ST-Link v3"
+        //     );
+        // }
 
-        self.device.write(
-            &[
-                commands::JTAG_COMMAND,
-                commands::JTAG_WRITEMEM_8BIT,
-                address as u8,
-                (address >> 8) as u8,
-                (address >> 16) as u8,
-                (address >> 24) as u8,
-                byte_length as u8,
-                (byte_length >> 8) as u8,
-                apsel,
-            ],
-            data,
-            &mut [],
-            TIMEOUT,
-        )?;
+        // self.device.write(
+        //     &[
+        //         commands::JTAG_COMMAND,
+        //         commands::JTAG_WRITEMEM_8BIT,
+        //         address as u8,
+        //         (address >> 8) as u8,
+        //         (address >> 16) as u8,
+        //         (address >> 24) as u8,
+        //         byte_length as u8,
+        //         (byte_length >> 8) as u8,
+        //         apsel,
+        //     ],
+        //     data,
+        //     &mut [],
+        //     TIMEOUT,
+        // )?;
 
-        self.get_last_rw_status()?;
+        // self.get_last_rw_status()?;
 
-        Ok(())
+        // Ok(())
     }
 
     fn _read_debug_reg(&mut self, address: u32) -> Result<u32, DebugProbeError> {
@@ -1062,6 +1088,10 @@ pub(crate) enum IcdiError {
     CommandFailed(Status),
     #[error("JTAG not supported on Probe")]
     JTAGNotSupportedOnProbe,
+    #[error("Invalid checksum")]
+    InvalidCheckSum { is: u8, should: u8 },
+    #[error("Temporary placeholder, FIXME")]
+    FixMeError,
     #[error("Mancehster-coded SWO mode not supported")]
     ManchesterSwoNotSupported,
 }

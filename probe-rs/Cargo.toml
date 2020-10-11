@@ -21,6 +21,7 @@ builtin-targets = []
 ftdi = ["libftdi1-sys", "bitvec"]
 
 [dependencies]
+hex = "0.4.2"
 log = "0.4.8"
 num-traits = "0.2.11"
 enum-primitive-derive = "0.2.1"

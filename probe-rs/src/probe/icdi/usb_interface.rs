@@ -1,5 +1,7 @@
+use hex;
 use lazy_static::lazy_static;
 use rusb::{Context, DeviceHandle, Error, UsbContext};
+use std::num::Wrapping;
 use std::time::Duration;
 
 use crate::probe::icdi::IcdiError;
@@ -24,7 +26,7 @@ lazy_static! {
     /// Map of USB PID to firmware version name and device endpoints.
     pub static ref USB_PID_EP_MAP: HashMap<u16, ICDIInfo> = {
         let mut m = HashMap::new();
-        m.insert(0x00fd, ICDIInfo::new("Unknown-Version",    0x00fd));
+        m.insert(0x00fd, ICDIInfo::new("Unknown-Version",    0x00fd, 0x02,   0x83));
         // m.insert(0x374b, STLinkInfo::new("V2-1",  0x374b, 0x01,   0x81,   0x82));
         // m.insert(0x374a, STLinkInfo::new("V2-1",  0x374a, 0x01,   0x81,   0x82));  // Audio
         // m.insert(0x3742, STLinkInfo::new("V2-1",  0x3742, 0x01,   0x81,   0x82));  // No MSD
@@ -41,8 +43,8 @@ lazy_static! {
 pub struct ICDIInfo {
     pub version_name: String,
     pub usb_pid: u16,
-    // ep_out: u8,
-    // ep_in: u8,
+    ep_out: u8,
+    ep_in: u8,
     // ep_swo: u8,
 }
 
@@ -50,15 +52,15 @@ impl ICDIInfo {
     pub fn new<V: Into<String>>(
         version_name: V,
         usb_pid: u16,
-        // ep_out: u8,
-        // ep_in: u8,
+        ep_out: u8,
+        ep_in: u8,
         // ep_swo: u8,
     ) -> Self {
         Self {
             version_name: version_name.into(),
             usb_pid,
-            // ep_out,
-            // ep_in,
+            ep_out,
+            ep_in,
             // ep_swo,
         }
     }
@@ -81,7 +83,15 @@ impl std::fmt::Debug for ICDIUSBDevice {
 pub trait IcdiUsb: std::fmt::Debug {
     fn write(
         &mut self,
-        cmd: &[u8],
+        //        cmd: &[u8],
+        write_data: &[u8],
+        read_data: &mut [u8],
+        timeout: Duration,
+    ) -> Result<(), DebugProbeError>;
+
+    fn write_remote(
+        &mut self,
+        //        cmd: &[u8],
         write_data: &[u8],
         read_data: &mut [u8],
         timeout: Duration,
@@ -205,6 +215,43 @@ impl ICDIUSBDevice {
     }
 }
 
+fn create_packet(payload: &[u8]) -> Vec<u8> {
+    /* calculate checksum - offset start of packet */
+    let mut cksum = 0u8;
+    for c in payload {
+        cksum = c.wrapping_add(cksum);
+    }
+
+    ["$".as_bytes(), payload, format!("#{:02x}", cksum).as_bytes()].concat()
+}
+
+fn verify_packet(packet: &[u8]) -> Result<(), DebugProbeError> {
+    let mut cksum = 0u8;
+
+    for c in &packet[1..packet.len() - 3] {
+        cksum = c.wrapping_add(cksum);
+    }
+
+    match hex::decode(&packet[packet.len() - 2..]) {
+        Ok(v) => {
+            if cksum != v[0] {
+                Err(IcdiError::InvalidCheckSum {
+                    is: v[0],
+                    should: cksum,
+                }
+                .into())
+            } else {
+                Ok(())
+            }
+        }
+        _ => Err(IcdiError::InvalidCheckSum {
+            is: 0,
+            should: cksum,
+        }
+        .into()),
+    }
+}
+
 impl IcdiUsb for ICDIUSBDevice {
     /// Writes to the out EP and reads back data if needed.
     /// First the `cmd` is sent.
@@ -212,66 +259,101 @@ impl IcdiUsb for ICDIUSBDevice {
     /// And lastly, data will be read back until `read_data` is filled.
     fn write(
         &mut self,
-        cmd: &[u8],
         write_data: &[u8],
         read_data: &mut [u8],
         timeout: Duration,
     ) -> Result<(), DebugProbeError> {
-        log::trace!(
-            "Sending command {:x?} to ICDI, timeout: {:?}",
-            cmd,
-            timeout
-        );
+        log::trace!("Sending something to ICDI, timeout: {:?}", timeout);
 
-        // Command phase.
-        // assert!(cmd.len() <= CMD_LEN);
-        // let mut padded_cmd = [0u8; CMD_LEN];
-        // padded_cmd[..cmd.len()].copy_from_slice(cmd);
+        let ep_out = self.info.ep_out;
+        let ep_in = self.info.ep_in;
 
-        // // let ep_out = self.info.ep_out;
-        // // let ep_in = self.info.ep_in;
+        for retry in 0..3 {
+            if !write_data.is_empty() {
+                log::debug!(
+                    "Will write {} bytes (+3 bytes for CHKSUM)",
+                    write_data.len()
+                );
 
-        // let written_bytes = self
-        //     .device_handle
-        //     .write_bulk(ep_out, &padded_cmd, timeout)
-        //     .map_err(|e| DebugProbeError::USB(Some(Box::new(e))))?;
+                let packet = create_packet(write_data);
 
-        // if written_bytes != CMD_LEN {
-        //     return Err(IcdiError::NotEnoughBytesRead {
-        //         is: written_bytes,
-        //         should: CMD_LEN,
-        //     }
-        //     .into());
-        // }
-        // // Optional data out phase.
-        // if !write_data.is_empty() {
-        //     let written_bytes = self
-        //         .device_handle
-        //         .write_bulk(ep_out, write_data, timeout)
-        //         .map_err(|e| DebugProbeError::USB(Some(Box::new(e))))?;
-        //     if written_bytes != write_data.len() {
-        //         return Err(IcdiError::NotEnoughBytesRead {
-        //             is: written_bytes,
-        //             should: write_data.len(),
-        //         }
-        //         .into());
-        //     }
-        // }
-        // // Optional data in phase.
-        // if !read_data.is_empty() {
-        //     let read_bytes = self
-        //         .device_handle
-        //         .read_bulk(ep_in, read_data, timeout)
-        //         .map_err(|e| DebugProbeError::USB(Some(Box::new(e))))?;
-        //     if read_bytes != read_data.len() {
-        //         return Err(IcdiError::NotEnoughBytesRead {
-        //             is: read_bytes,
-        //             should: read_data.len(),
-        //         }
-        //         .into());
-        //     }
-        // }
+                log::debug!(" --> really write {} bytes", packet.len());
+                log::debug!(" --> {:x?}", packet);
+                log::debug!(" --> {:?}", std::str::from_utf8(&packet));
+                let written_bytes = self
+                    .device_handle
+                    .write_bulk(ep_out, &packet, timeout)
+                    .map_err(|e| DebugProbeError::USB(Some(Box::new(e))))?;
+                if written_bytes != packet.len() {
+                    return Err(IcdiError::NotEnoughBytesRead {
+                        is: written_bytes,
+                        should: packet.len(),
+                    }
+                    .into());
+                }
+                log::debug!("write step done");
+                let mut ack = [0u8];
+                let read_bytes = self
+                    .device_handle
+                    .read_bulk(ep_in, &mut ack, timeout)
+                    .map_err(|e| DebugProbeError::USB(Some(Box::new(e))))?;
+                if read_bytes == 1 && ack[0] == '-' as u8 {
+                    log::debug!("looping, write not ACKed : {}", ack[0]);
+                } else if read_bytes == 1 && ack[0] != '+' as u8 {
+                    // unexpected
+                    return Err(IcdiError::FixMeError.into());
+                } else {
+                    log::debug!("write ACKed");
+                    break;
+                }
+            }
+        }
+
+        // Optional data in phase.
+        if !read_data.is_empty() {
+            let mut read_data_pkt = vec![0u8; read_data.len() + 4];
+            log::debug!("Will read {} bytes", read_data_pkt.len());
+            let read_bytes = self
+                .device_handle
+                .read_bulk(ep_in, &mut read_data_pkt, timeout)
+                .map_err(|e| DebugProbeError::USB(Some(Box::new(e))))?;
+            log::debug!("read finished {} bytes", read_bytes);
+            log::debug!("read finished {:?} bytes", read_data_pkt);
+            if read_bytes != read_data_pkt.len() {
+                return Err(IcdiError::NotEnoughBytesRead {
+                    is: read_bytes,
+                    should: read_data_pkt.len(),
+                }
+                .into());
+            }
+            log::debug!(" --> {:?}", std::str::from_utf8(&read_data_pkt));
+            if read_data_pkt[read_data_pkt.len() - 3] != '#' as u8 {
+                return Err(IcdiError::FixMeError.into());
+            }
+
+            verify_packet(&read_data_pkt)?;
+
+            read_data.clone_from_slice(&read_data_pkt[1..read_data_pkt.len() - 3]);
+            log::debug!("read step done, checksum OK");
+        }
         Ok(())
+    }
+
+    fn write_remote(
+        &mut self,
+        //        cmd: &[u8],
+        write_data: &[u8],
+        read_data: &mut [u8],
+        timeout: Duration,
+    ) -> Result<(), DebugProbeError> {
+        log::debug!("write remote");
+        log::debug!("data to send : {:?}", write_data);
+        log::debug!(
+            "data to send hexified : {:?}",
+            hex::encode(write_data).as_bytes()
+        );
+        let data = ["qRcmd,".as_bytes(), hex::encode(write_data).as_bytes()].concat();
+        self.write(&data, read_data, timeout)
     }
 
     // fn read_swo(
