@@ -301,7 +301,7 @@ impl IcdiUsb for ICDIUSBDevice {
                     log::debug!("looping, write not ACKed : {}", ack[0]);
                 } else if read_bytes == 1 && ack[0] != '+' as u8 {
                     // unexpected
-                    return Err(IcdiError::FixMeError.into());
+                    return Err(IcdiError::FixMeError(line!()).into());
                 } else {
                     log::debug!("write ACKed");
                     break;
@@ -328,7 +328,7 @@ impl IcdiUsb for ICDIUSBDevice {
             }
             log::debug!(" --> {:?}", std::str::from_utf8(&read_data_pkt));
             if read_data_pkt[read_data_pkt.len() - 3] != '#' as u8 {
-                return Err(IcdiError::FixMeError.into());
+                return Err(IcdiError::FixMeError(line!()).into());
             }
 
             verify_packet(&read_data_pkt)?;

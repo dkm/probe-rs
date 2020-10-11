@@ -122,29 +122,30 @@ impl DebugProbe for ICDI<ICDIUSBDevice> {
 
     fn attach(&mut self) -> Result<(), DebugProbeError> {
         log::debug!("attach");
-        self.enter_idle()?;
+        Err(IcdiError::FixMeError(line!()).into())
+        // self.enter_idle()?;
 
-        log::debug!("Switching protocol to JTAG");
-        let param = commands::JTAG_ENTER_JTAG_NO_CORE_RESET;
+        // log::debug!("Switching protocol to JTAG");
+        // let param = commands::JTAG_ENTER_JTAG_NO_CORE_RESET;
 
-        let mut buf = [0; 2];
-        self.send_jtag_command(
-            &[commands::JTAG_COMMAND, commands::JTAG_ENTER2, param, 0],
-            &[],
-            &mut buf,
-            TIMEOUT,
-        )?;
+        // let mut buf = [0; 2];
+        // self.send_jtag_command(
+        //     &[commands::JTAG_COMMAND, commands::JTAG_ENTER2, param, 0],
+        //     &[],
+        //     &mut buf,
+        //     TIMEOUT,
+        // )?;
 
-        log::debug!("Successfully initialized SWD.");
+        // log::debug!("Successfully initialized SWD.");
 
-        // If the speed is not manually set, the probe will
-        // use whatever speed has been configured before.
-        //
-        // To ensure the default speed is used if not changed,
-        // we set the speed again here.
-        self.set_speed(self.speed_khz)?;
+        // // If the speed is not manually set, the probe will
+        // // use whatever speed has been configured before.
+        // //
+        // // To ensure the default speed is used if not changed,
+        // // we set the speed again here.
+        // self.set_speed(self.speed_khz)?;
 
-        Ok(())
+        // Ok(())
     }
 
     fn detach(&mut self) -> Result<(), DebugProbeError> {
@@ -153,7 +154,8 @@ impl DebugProbe for ICDI<ICDIUSBDevice> {
         //     self.disable_swo()
         //         .map_err(|e| DebugProbeError::ProbeSpecific(e.into()))?;
         // }
-        self.enter_idle()
+        //        self.enter_idle()
+        Ok(())
     }
 
     fn target_reset(&mut self) -> Result<(), DebugProbeError> {
@@ -231,7 +233,7 @@ impl DebugProbe for ICDI<ICDIUSBDevice> {
 impl DAPAccess for ICDI<ICDIUSBDevice> {
     /// Reads the DAP register on the specified port and address.
     fn read_register(&mut self, port: PortType, addr: u16) -> Result<u32, DebugProbeError> {
-        Err(IcdiError::FixMeError.into())
+        Err(IcdiError::FixMeError(line!()).into())
         // if (addr & 0xf0) == 0 || port != PortType::DebugPort {
         //     if let PortType::AccessPort(port_number) = port {
         //         self.select_ap(port_number as u8)?;
@@ -347,7 +349,7 @@ impl<D: IcdiUsb> ICDI<D> {
     /// Reads the target voltage.
     /// For the china fake variants this will always read a nonzero value!
     pub fn get_target_voltage(&mut self) -> Result<f32, DebugProbeError> {
-        Err(IcdiError::FixMeError.into())
+        Err(IcdiError::FixMeError(line!()).into())
         // let mut buf = [0; 8];
         // match self
         //     .device
@@ -371,7 +373,7 @@ impl<D: IcdiUsb> ICDI<D> {
     /// Get the current mode of the ST-Link
     fn get_current_mode(&mut self) -> Result<Mode, DebugProbeError> {
         log::trace!("Getting current mode of device...");
-        Err(IcdiError::FixMeError.into())
+        Err(IcdiError::FixMeError(line!()).into())
         // self.device
         //     .write(&[commands::GET_CURRENT_MODE], &[], &mut buf, TIMEOUT)?;
 
@@ -394,7 +396,7 @@ impl<D: IcdiUsb> ICDI<D> {
     /// Internal helper.
     fn enter_idle(&mut self) -> Result<(), DebugProbeError> {
         log::debug!("Will enter idle");
-        Err(IcdiError::FixMeError.into())
+        Err(IcdiError::FixMeError(line!()).into())
         // let mode = self.get_current_mode()?;
 
         // log::debug!("Mode is {:?}", mode);
@@ -418,7 +420,7 @@ impl<D: IcdiUsb> ICDI<D> {
     /// Reads the ST-Links version.
     /// Returns a tuple (hardware version, firmware version).
     /// This method stores the version data on the struct to make later use of it.
-    fn get_version(&mut self) -> Result<(u8, u8), DebugProbeError> {
+    fn get_version(&mut self) -> Result<u32, DebugProbeError> {
         const HW_VERSION_SHIFT: u8 = 12;
         const HW_VERSION_MASK: u8 = 0x0F;
         const JTAG_VERSION_SHIFT: u8 = 6;
@@ -430,11 +432,13 @@ impl<D: IcdiUsb> ICDI<D> {
         self.device
             .write_remote(b"version", &mut version, TIMEOUT)?;
         let vs = hex::decode(version).unwrap();
-        let v = std::str::from_utf8(&vs).unwrap();
+        
+        let v = std::str::from_utf8(&vs[..vs.len()-1]).unwrap();
         log::debug!("version {:?}", v);
-        //            icdi_send_remote_cmd(handle, "version");
+        let vint = v.parse::<u32>().unwrap();
 
-        Err(IcdiError::FixMeError.into())
+        Ok(vint)
+ //            icdi_send_remote_cmd(handle, "version");
 
         // GET_VERSION response structure:
         //   Byte 0-1:
@@ -516,7 +520,7 @@ impl<D: IcdiUsb> ICDI<D> {
         log::debug!("Will get version");
         let version = self.get_version()?;
         log::debug!("ICDI version: {:?}", version);
-
+        Ok(())
         // if self.hw_version == 3 {
         //     let (_, current) = self.get_communication_frequencies(WireProtocol::Swd)?;
         //     self.swd_speed_khz = current;
@@ -525,7 +529,7 @@ impl<D: IcdiUsb> ICDI<D> {
         //     self.jtag_speed_khz = current;
         // }
 
-        self.get_target_voltage().map(|_| ())
+//        self.get_target_voltage().map(|_| ())
     }
 
     /// sets the SWD frequency.
@@ -721,7 +725,7 @@ impl<D: IcdiUsb> ICDI<D> {
         // // Return the last error (will be SwdDpWait or SwdApWait)
         // let status = Status::from(read_data[0]);
         // return Err(From::from(IcdiError::CommandFailed(status)));
-        Err(IcdiError::FixMeError.into())
+        Err(IcdiError::FixMeError(line!()).into())
     }
 
     pub fn start_trace_reception(&mut self, config: &SwoConfig) -> Result<(), DebugProbeError> {
@@ -756,7 +760,7 @@ impl<D: IcdiUsb> ICDI<D> {
 
     /// Gets the SWO count from the ST-Link probe.
     fn read_swo_available_byte_count(&mut self) -> Result<usize, DebugProbeError> {
-        Err(IcdiError::FixMeError.into())
+        Err(IcdiError::FixMeError(line!()).into())
         // let mut buf = [0; 2];
         // self.device.write(
         //     &[
@@ -801,7 +805,7 @@ impl<D: IcdiUsb> ICDI<D> {
             address,
             length
         );
-        Err(IcdiError::FixMeError.into())
+        Err(IcdiError::FixMeError(line!()).into())
         // // Maximum supported read length is 2^16 bytes.
         // assert!(
         //     length < (u16::MAX / 4),
@@ -850,7 +854,7 @@ impl<D: IcdiUsb> ICDI<D> {
         apsel: u8,
     ) -> Result<Vec<u8>, DebugProbeError> {
         log::debug!("Read mem 8 bit, address={:08x}, length={}", address, length);
-        Err(IcdiError::FixMeError.into())
+        Err(IcdiError::FixMeError(line!()).into())
         // let mut receive_buffer = vec![0u8; length as usize];
 
         // self.device.write(
@@ -882,7 +886,7 @@ impl<D: IcdiUsb> ICDI<D> {
         apsel: u8,
     ) -> Result<(), DebugProbeError> {
         log::trace!("write_mem_32bit");
-        Err(IcdiError::FixMeError.into())
+        Err(IcdiError::FixMeError(line!()).into())
         // let length = data.len();
 
         // // Maximum supported read length is 2^16 bytes.
@@ -936,7 +940,7 @@ impl<D: IcdiUsb> ICDI<D> {
         apsel: u8,
     ) -> Result<(), DebugProbeError> {
         log::trace!("write_mem_8bit");
-        Err(IcdiError::FixMeError.into())
+        Err(IcdiError::FixMeError(line!()).into())
         // let byte_length = data.len();
 
         // if self.hw_version < 3 {
@@ -1090,8 +1094,8 @@ pub(crate) enum IcdiError {
     JTAGNotSupportedOnProbe,
     #[error("Invalid checksum")]
     InvalidCheckSum { is: u8, should: u8 },
-    #[error("Temporary placeholder, FIXME")]
-    FixMeError,
+    #[error("Temporary placeholder at {0:?}, FIXME")]
+    FixMeError (u32),
     #[error("Mancehster-coded SWO mode not supported")]
     ManchesterSwoNotSupported,
 }
