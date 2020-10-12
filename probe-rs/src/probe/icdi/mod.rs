@@ -31,6 +31,9 @@ pub struct ICDI<D: IcdiUsb> {
     //    protocol: WireProtocol,
     speed_khz: u32,
 
+    icdi_version: u32,
+    packet_size: usize,
+
     /// List of opened APs
     openend_aps: Vec<u8>,
 }
@@ -46,6 +49,8 @@ impl DebugProbe for ICDI<ICDIUSBDevice> {
             //          protocol: WireProtocol::Swd,
             //            swd_speed_khz: 1_800,
             speed_khz: 1_120,
+            icdi_version: 0,
+            packet_size: 0,
 
             openend_aps: vec![],
         };
@@ -325,7 +330,18 @@ impl<D: IcdiUsb> Drop for ICDI<D> {
         // if self.swo_enabled {
         //     let _ = self.disable_swo();
         // }
-//        let _ = self.enter_idle();
+        //        let _ = self.enter_idle();
+    }
+}
+
+fn check_result(result: &str) -> Result<(), DebugProbeError> {
+    if result.starts_with("OK") {
+        Ok(())
+    } else if result.starts_with('E') {
+        let num = result[1..].parse::<u32>().unwrap();
+        Err(IcdiError::ProtocolError(num).into())
+    } else {
+        Err(IcdiError::InvalidProtocol.into())
     }
 }
 
@@ -421,10 +437,10 @@ impl<D: IcdiUsb> ICDI<D> {
     /// Returns a tuple (hardware version, firmware version).
     /// This method stores the version data on the struct to make later use of it.
     fn get_version(&mut self) -> Result<u32, DebugProbeError> {
-        const HW_VERSION_SHIFT: u8 = 12;
-        const HW_VERSION_MASK: u8 = 0x0F;
-        const JTAG_VERSION_SHIFT: u8 = 6;
-        const JTAG_VERSION_MASK: u8 = 0x3F;
+        // const HW_VERSION_SHIFT: u8 = 12;
+        // const HW_VERSION_MASK: u8 = 0x0F;
+        // const JTAG_VERSION_SHIFT: u8 = 6;
+        // const JTAG_VERSION_MASK: u8 = 0x3F;
 
         log::debug!("Get version");
 
@@ -432,13 +448,13 @@ impl<D: IcdiUsb> ICDI<D> {
         self.device
             .write_remote(b"version", &mut version, TIMEOUT)?;
         let vs = hex::decode(version).unwrap();
-        
-        let v = std::str::from_utf8(&vs[..vs.len()-1]).unwrap();
+
+        let v = std::str::from_utf8(&vs[..vs.len() - 1]).unwrap();
         log::debug!("version {:?}", v);
         let vint = v.parse::<u32>().unwrap();
 
         Ok(vint)
- //            icdi_send_remote_cmd(handle, "version");
+        //            icdi_send_remote_cmd(handle, "version");
 
         // GET_VERSION response structure:
         //   Byte 0-1:
@@ -499,6 +515,37 @@ impl<D: IcdiUsb> ICDI<D> {
         // Ok((self.hw_version, self.jtag_version))
     }
 
+    fn set_extended_mode(&mut self) -> Result<(), DebugProbeError> {
+        log::debug!("Get supported");
+
+        let mut reply = [0u8; 128];
+        self.device.write(b"!", &mut reply, TIMEOUT)?;
+        let reply = std::str::from_utf8(&reply).unwrap();
+        log::debug!("result '{}'", reply);
+
+        check_result(reply)
+    }
+
+    fn get_supported(&mut self) -> Result<usize, DebugProbeError> {
+        log::debug!("Get supported");
+
+        let mut version = [0u8; 256];
+        self.device.write(b"qSupported", &mut version, TIMEOUT)?;
+        let version_str = std::str::from_utf8(&version[..version.len() - 1]).unwrap();
+
+        if let Some(start_pkt_sz) = version_str.find("PacketSize=") {
+            if let Some(end_pkt_sz) = version_str[start_pkt_sz..].find(";") {
+                let packet_size = version_str[start_pkt_sz + "PacketSize=".len()..end_pkt_sz]
+                    .parse::<usize>()
+                    .unwrap();
+                log::debug!("packet size {}", packet_size);
+                return Ok(packet_size);
+            }
+        }
+
+        Err(IcdiError::InvalidProtocol.into())
+    }
+
     /// Opens the ST-Link USB device and tries to identify the ST-Links version and its target voltage.
     /// Internal helper.
     fn init(&mut self) -> Result<(), DebugProbeError> {
@@ -518,8 +565,12 @@ impl<D: IcdiUsb> ICDI<D> {
         // }
 
         log::debug!("Will get version");
-        let version = self.get_version()?;
-        log::debug!("ICDI version: {:?}", version);
+        self.icdi_version = self.get_version()?;
+        log::debug!("ICDI version: {:?}", self.icdi_version);
+        self.packet_size = self.get_supported()?;
+        log::debug!("ICDI packet size: {:?}", self.packet_size);
+        self.set_extended_mode()?;
+
         Ok(())
         // if self.hw_version == 3 {
         //     let (_, current) = self.get_communication_frequencies(WireProtocol::Swd)?;
@@ -529,7 +580,7 @@ impl<D: IcdiUsb> ICDI<D> {
         //     self.jtag_speed_khz = current;
         // }
 
-//        self.get_target_voltage().map(|_| ())
+        //        self.get_target_voltage().map(|_| ())
     }
 
     /// sets the SWD frequency.
@@ -1094,8 +1145,12 @@ pub(crate) enum IcdiError {
     JTAGNotSupportedOnProbe,
     #[error("Invalid checksum")]
     InvalidCheckSum { is: u8, should: u8 },
+    #[error("ICDI error {0}")]
+    ProtocolError(u32),
+    #[error("Invalid protocol")]
+    InvalidProtocol,
     #[error("Temporary placeholder at {0:?}, FIXME")]
-    FixMeError (u32),
+    FixMeError(u32),
     #[error("Mancehster-coded SWO mode not supported")]
     ManchesterSwoNotSupported,
 }

@@ -83,19 +83,17 @@ impl std::fmt::Debug for ICDIUSBDevice {
 pub trait IcdiUsb: std::fmt::Debug {
     fn write(
         &mut self,
-        //        cmd: &[u8],
         write_data: &[u8],
         read_data: &mut [u8],
         timeout: Duration,
-    ) -> Result<(), DebugProbeError>;
+    ) -> Result<(usize, usize), DebugProbeError>;
 
     fn write_remote(
         &mut self,
-        //        cmd: &[u8],
         write_data: &[u8],
         read_data: &mut [u8],
         timeout: Duration,
-    ) -> Result<(), DebugProbeError>;
+    ) -> Result<(usize, usize), DebugProbeError>;
 
     /// Reset the USB device. This can be used to recover when the
     /// STLink does not respond to USB requests.
@@ -170,42 +168,37 @@ impl ICDIUSBDevice {
 
         let mut endpoint_out = false;
         let mut endpoint_in = false;
-        let mut endpoint_swo = false;
 
-        // if let Some(interface) = config.interfaces().next() {
-        //     if let Some(descriptor) = interface.descriptors().next() {
-        //         for endpoint in descriptor.endpoint_descriptors() {
-        //             if endpoint.address() == info.ep_out {
-        //                 endpoint_out = true;
-        //             } else if endpoint.address() == info.ep_in {
-        //                 endpoint_in = true;
-        //             } else if endpoint.address() == info.ep_swo {
-        //                 endpoint_swo = true;
-        //             }
-        //         }
-        //     }
-        // }
+        if let Some(interface) = config.interfaces().nth(2) {
+            if let Some(descriptor) = interface.descriptors().next() {
+                for endpoint in descriptor.endpoint_descriptors() {
+                    log::debug!("EP {:?}", endpoint.address());
 
-        // if !endpoint_out {
-        //     return Err(IcdiError::EndpointNotFound.into());
-        // }
+                    if endpoint.address() == info.ep_out {
+                        endpoint_out = true;
+                    } else if endpoint.address() == info.ep_in {
+                        endpoint_in = true;
+                    }
+                }
+            }
+        }
+        log::debug!("EP found {} {}.", endpoint_in, endpoint_out);
+        if !endpoint_out {
+            return Err(IcdiError::EndpointNotFound.into());
+        }
 
-        // if !endpoint_in {
-        //     return Err(IcdiError::EndpointNotFound.into());
-        // }
+        if !endpoint_in {
+            return Err(IcdiError::EndpointNotFound.into());
+        }
 
-        // if !endpoint_swo {
-        //     return Err(IcdiError::EndpointNotFound.into());
-        // }
-
-        let usb_stlink = Self {
+        let usb_icdi = Self {
             device_handle,
             info,
         };
 
         log::debug!("Succesfully attached to ICDI.");
 
-        Ok(usb_stlink)
+        Ok(usb_icdi)
     }
 
     /// Closes the USB interface gracefully.
@@ -222,7 +215,12 @@ fn create_packet(payload: &[u8]) -> Vec<u8> {
         cksum = c.wrapping_add(cksum);
     }
 
-    ["$".as_bytes(), payload, format!("#{:02x}", cksum).as_bytes()].concat()
+    [
+        "$".as_bytes(),
+        payload,
+        format!("#{:02x}", cksum).as_bytes(),
+    ]
+    .concat()
 }
 
 fn verify_packet(packet: &[u8]) -> Result<(), DebugProbeError> {
@@ -262,11 +260,13 @@ impl IcdiUsb for ICDIUSBDevice {
         write_data: &[u8],
         read_data: &mut [u8],
         timeout: Duration,
-    ) -> Result<(), DebugProbeError> {
+    ) -> Result<(usize, usize), DebugProbeError> {
         log::trace!("Sending something to ICDI, timeout: {:?}", timeout);
 
         let ep_out = self.info.ep_out;
         let ep_in = self.info.ep_in;
+
+        let mut written_bytes = 0;
 
         for retry in 0..3 {
             if !write_data.is_empty() {
@@ -284,6 +284,7 @@ impl IcdiUsb for ICDIUSBDevice {
                     .device_handle
                     .write_bulk(ep_out, &packet, timeout)
                     .map_err(|e| DebugProbeError::USB(Some(Box::new(e))))?;
+
                 if written_bytes != packet.len() {
                     return Err(IcdiError::NotEnoughBytesRead {
                         is: written_bytes,
@@ -309,34 +310,36 @@ impl IcdiUsb for ICDIUSBDevice {
             }
         }
 
+        let mut read_bytes = 0;
+
         // Optional data in phase.
         if !read_data.is_empty() {
             let mut read_data_pkt = vec![0u8; read_data.len() + 4];
             log::debug!("Will read {} bytes", read_data_pkt.len());
-            let read_bytes = self
+            read_bytes = self
                 .device_handle
                 .read_bulk(ep_in, &mut read_data_pkt, timeout)
                 .map_err(|e| DebugProbeError::USB(Some(Box::new(e))))?;
             log::debug!("read finished {} bytes", read_bytes);
             log::debug!("read finished {:?} bytes", read_data_pkt);
-            if read_bytes != read_data_pkt.len() {
-                return Err(IcdiError::NotEnoughBytesRead {
-                    is: read_bytes,
-                    should: read_data_pkt.len(),
-                }
-                .into());
-            }
+            // if read_bytes != read_data_pkt.len() {
+            //     return Err(IcdiError::NotEnoughBytesRead {
+            //         is: read_bytes,
+            //         should: read_data_pkt.len(),
+            //     }
+            //     .into());
+            // }
             log::debug!(" --> {:?}", std::str::from_utf8(&read_data_pkt));
-            if read_data_pkt[read_data_pkt.len() - 3] != '#' as u8 {
-                return Err(IcdiError::FixMeError(line!()).into());
+            if read_bytes < 4 || read_data_pkt[read_bytes - 3] != '#' as u8 {
+                return Err(IcdiError::InvalidProtocol.into());
             }
 
-            verify_packet(&read_data_pkt)?;
+            verify_packet(&read_data_pkt[..read_bytes])?;
 
-            read_data.clone_from_slice(&read_data_pkt[1..read_data_pkt.len() - 3]);
+            &read_data[..read_bytes - 4].copy_from_slice(&read_data_pkt[1..read_bytes - 3]);
             log::debug!("read step done, checksum OK");
         }
-        Ok(())
+        Ok((written_bytes, read_bytes))
     }
 
     fn write_remote(
@@ -345,7 +348,7 @@ impl IcdiUsb for ICDIUSBDevice {
         write_data: &[u8],
         read_data: &mut [u8],
         timeout: Duration,
-    ) -> Result<(), DebugProbeError> {
+    ) -> Result<(usize, usize), DebugProbeError> {
         log::debug!("write remote");
         log::debug!("data to send : {:?}", write_data);
         log::debug!(
