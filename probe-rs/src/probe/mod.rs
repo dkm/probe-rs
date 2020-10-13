@@ -719,7 +719,7 @@ impl<'a> AsMut<dyn DebugProbe + 'a> for FakeProbe {
 /// Low-Level Access to the JTAG protocol
 ///
 /// This trait should be implemented by all probes which offer low-level access to
-/// the JTAG protocol, i.e. directo control over the bytes sent and received.
+/// the JTAG protocol, i.e. direct control over the bytes sent and received.
 pub trait JTAGAccess: DebugProbe + AsRef<dyn DebugProbe> + AsMut<dyn DebugProbe> {
     fn read_register(&mut self, address: u32, len: u32) -> Result<Vec<u8>, DebugProbeError>;
 
