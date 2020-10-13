@@ -279,7 +279,7 @@ impl IcdiUsb for ICDIUSBDevice {
 
                 log::debug!(" --> really write {} bytes", packet.len());
                 log::debug!(" --> {:x?}", packet);
-                log::debug!(" --> {:?}", std::str::from_utf8(&packet));
+                log::debug!(" --> {:?}", std::str::from_utf8(&packet).unwrap());
                 let written_bytes = self
                     .device_handle
                     .write_bulk(ep_out, &packet, timeout)
@@ -320,8 +320,8 @@ impl IcdiUsb for ICDIUSBDevice {
                 .device_handle
                 .read_bulk(ep_in, &mut read_data_pkt, timeout)
                 .map_err(|e| DebugProbeError::USB(Some(Box::new(e))))?;
-            log::debug!("read finished {} bytes", read_bytes);
-            log::debug!("read finished {:?} bytes", read_data_pkt);
+            // log::debug!("read finished {} bytes", read_bytes);
+            // log::debug!("read finished {:?} bytes", read_data_pkt);
             // if read_bytes != read_data_pkt.len() {
             //     return Err(IcdiError::NotEnoughBytesRead {
             //         is: read_bytes,
@@ -329,7 +329,7 @@ impl IcdiUsb for ICDIUSBDevice {
             //     }
             //     .into());
             // }
-            log::debug!(" --> {:?}", std::str::from_utf8(&read_data_pkt));
+            log::debug!(" --> {:?}", std::str::from_utf8(&read_data_pkt[..read_bytes]).unwrap());
             if read_bytes < 4 || read_data_pkt[read_bytes - 3] != '#' as u8 {
                 return Err(IcdiError::InvalidProtocol.into());
             }

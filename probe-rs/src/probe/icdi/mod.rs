@@ -69,65 +69,13 @@ impl DebugProbe for ICDI<ICDIUSBDevice> {
     }
 
     fn set_speed(&mut self, speed_khz: u32) -> Result<u32, DebugProbeError> {
-        self.speed_khz = speed_khz;
-        // TODO
-        Ok(speed_khz)
-        //         match self.hw_version.cmp(&3) {
-        //             Ordering::Less => { // match self.protocol {
-        //                 // WireProtocol::Swd => {
-        //                 //     let actual_speed = SwdFrequencyToDelayCount::find_setting(speed_khz);
-
-        //                 //     if let Some(actual_speed) = actual_speed {
-        //                 //         self.set_swd_frequency(actual_speed)?;
-
-        //                 //         self.swd_speed_khz = actual_speed.to_khz();
-
-        //                 //         Ok(actual_speed.to_khz())
-        //                 //     } else {
-        //                 //         Err(DebugProbeError::UnsupportedSpeed(speed_khz))
-        //                 //     }
-        //                 // }
-        //                 // WireProtocol::Jtag => {
-        //                     let actual_speed = JTagFrequencyToDivider::find_setting(speed_khz);
-
-        //                     if let Some(actual_speed) = actual_speed {
-        //                         self.set_jtag_frequency(actual_speed)?;
-
-        //                         self.speed_khz = actual_speed.to_khz();
-
-        //                         Ok(actual_speed.to_khz())
-        //                     } else {
-        //                         Err(DebugProbeError::UnsupportedSpeed(speed_khz))
-        //                     }
-        //                 // }
-        //             },
-
-        //             Ordering::Equal => {
-        //                 // let (available, _) = self.get_communication_frequencies(self.protocol)?;
-
-        //                 // let actual_speed_khz = available
-        //                 //     .into_iter()
-        //                 //     .filter(|speed| *speed <= speed_khz)
-        //                 //     .max()
-        //                 //     .ok_or(DebugProbeError::UnsupportedSpeed(speed_khz))?;
-
-        // //                self.set_communication_frequency(self.protocol, actual_speed_khz)?;
-
-        //                 self.jtag_speed_khz = actual_speed_khz;
-        //                 // match self.protocol {
-        //                 //     // WireProtocol::Swd => self.swd_speed_khz = actual_speed_khz,
-        //                 //     WireProtocol::Jtag => self.jtag_speed_khz = actual_speed_khz,
-        //                 // }
-
-        //                 Ok(actual_speed_khz)
-        //             }
-        //             Ordering::Greater => unimplemented!(),
-        //         }
+        Err(DebugProbeError::UnsupportedSpeed(speed_khz))
     }
 
     fn attach(&mut self) -> Result<(), DebugProbeError> {
         log::debug!("attach");
-        Err(IcdiError::FixMeError(line!()).into())
+        Ok(())
+        //        Err(IcdiError::FixMeError(line!()).into())
         // self.enter_idle()?;
 
         // log::debug!("Switching protocol to JTAG");
@@ -155,54 +103,30 @@ impl DebugProbe for ICDI<ICDIUSBDevice> {
 
     fn detach(&mut self) -> Result<(), DebugProbeError> {
         log::debug!("Detaching from ICDI.");
-        // if self.swo_enabled {
-        //     self.disable_swo()
-        //         .map_err(|e| DebugProbeError::ProbeSpecific(e.into()))?;
-        // }
-        //        self.enter_idle()
         Ok(())
     }
 
     fn target_reset(&mut self) -> Result<(), DebugProbeError> {
-        let mut buf = [0; 2];
-        self.send_jtag_command(
-            &[
-                commands::JTAG_COMMAND,
-                commands::JTAG_DRIVE_NRST,
-                commands::JTAG_DRIVE_NRST_PULSE,
-            ],
-            &[],
-            &mut buf,
-            TIMEOUT,
-        )
+        self.device
+            .write_remote(b"debug hreset", &mut [], TIMEOUT)?;
+
+        self.device
+            .write_remote(b"set vectorcatch 0", &mut [], TIMEOUT)?;
+
+        self.device
+            .write_remote(b"debug disable", &mut [], TIMEOUT)?;
+
+        Ok(())
     }
 
     fn target_reset_assert(&mut self) -> Result<(), DebugProbeError> {
-        let mut buf = [0; 2];
-        self.send_jtag_command(
-            &[
-                commands::JTAG_COMMAND,
-                commands::JTAG_DRIVE_NRST,
-                commands::JTAG_DRIVE_NRST_LOW,
-            ],
-            &[],
-            &mut buf,
-            TIMEOUT,
-        )
+        log::error!("ICDI target_reset_assert");
+        unimplemented!()
     }
 
     fn target_reset_deassert(&mut self) -> Result<(), DebugProbeError> {
-        let mut buf = [0; 2];
-        self.send_jtag_command(
-            &[
-                commands::JTAG_COMMAND,
-                commands::JTAG_DRIVE_NRST,
-                commands::JTAG_DRIVE_NRST_HIGH,
-            ],
-            &[],
-            &mut buf,
-            TIMEOUT,
-        )
+        log::error!("ICDI target_reset_assert");
+        unimplemented!()
     }
 
     fn select_protocol(&mut self, protocol: WireProtocol) -> Result<(), DebugProbeError> {
@@ -238,7 +162,9 @@ impl DebugProbe for ICDI<ICDIUSBDevice> {
 impl DAPAccess for ICDI<ICDIUSBDevice> {
     /// Reads the DAP register on the specified port and address.
     fn read_register(&mut self, port: PortType, addr: u16) -> Result<u32, DebugProbeError> {
+
         Err(IcdiError::FixMeError(line!()).into())
+
         // if (addr & 0xf0) == 0 || port != PortType::DebugPort {
         //     if let PortType::AccessPort(port_number) = port {
         //         self.select_ap(port_number as u8)?;
@@ -572,52 +498,43 @@ impl<D: IcdiUsb> ICDI<D> {
         self.set_extended_mode()?;
 
         Ok(())
-        // if self.hw_version == 3 {
-        //     let (_, current) = self.get_communication_frequencies(WireProtocol::Swd)?;
-        //     self.swd_speed_khz = current;
-
-        //     let (_, current) = self.get_communication_frequencies(WireProtocol::Jtag)?;
-        //     self.jtag_speed_khz = current;
-        // }
-
-        //        self.get_target_voltage().map(|_| ())
     }
 
     /// sets the SWD frequency.
-    pub fn set_swd_frequency(
-        &mut self,
-        frequency: SwdFrequencyToDelayCount,
-    ) -> Result<(), DebugProbeError> {
-        let mut buf = [0; 2];
-        self.send_jtag_command(
-            &[
-                commands::JTAG_COMMAND,
-                commands::SWD_SET_FREQ,
-                frequency as u8,
-            ],
-            &[],
-            &mut buf,
-            TIMEOUT,
-        )
-    }
+    // pub fn set_swd_frequency(
+    //     &mut self,
+    //     frequency: SwdFrequencyToDelayCount,
+    // ) -> Result<(), DebugProbeError> {
+    //     let mut buf = [0; 2];
+    //     self.send_jtag_command(
+    //         &[
+    //             commands::JTAG_COMMAND,
+    //             commands::SWD_SET_FREQ,
+    //             frequency as u8,
+    //         ],
+    //         &[],
+    //         &mut buf,
+    //         TIMEOUT,
+    //     )
+    // }
 
     /// Sets the JTAG frequency.
-    pub fn set_jtag_frequency(
-        &mut self,
-        frequency: JTagFrequencyToDivider,
-    ) -> Result<(), DebugProbeError> {
-        let mut buf = [0; 2];
-        self.send_jtag_command(
-            &[
-                commands::JTAG_COMMAND,
-                commands::JTAG_SET_FREQ,
-                frequency as u8,
-            ],
-            &[],
-            &mut buf,
-            TIMEOUT,
-        )
-    }
+    // pub fn set_jtag_frequency(
+    //     &mut self,
+    //     frequency: JTagFrequencyToDivider,
+    // ) -> Result<(), DebugProbeError> {
+    //     let mut buf = [0; 2];
+    //     self.send_jtag_command(
+    //         &[
+    //             commands::JTAG_COMMAND,
+    //             commands::JTAG_SET_FREQ,
+    //             frequency as u8,
+    //         ],
+    //         &[],
+    //         &mut buf,
+    //         TIMEOUT,
+    //     )
+    // }
 
     /// Sets the communication frequency (V3 only)
     // fn set_communication_frequency(
