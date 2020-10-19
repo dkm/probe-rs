@@ -455,7 +455,7 @@ pub trait DebugProbe: Send + fmt::Debug {
     /// Selects the transport protocol to be used by the debug probe.
     fn select_protocol(&mut self, protocol: WireProtocol) -> Result<(), DebugProbeError>;
 
-    /// Check if the proble offers an interface to debug ARM chips.
+    /// Check if the probe offers an interface to debug ARM chips.
     fn has_arm_interface(&self) -> bool {
         false
     }
