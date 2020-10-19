@@ -148,93 +148,14 @@ impl DebugProbe for ICDI<ICDIUSBDevice> {
     fn get_arm_interface<'probe>(
         self: Box<Self>,
     ) -> Result<Option<Box<dyn ArmProbeInterface + 'probe>>, DebugProbeError> {
-        Err(IcdiError::UnknownMode.into())
+        unimplemented!();
         // let interface = IcdiArmDebug::new(self)?;
 
-        // Ok(Some(Box::new(interface)))
+        Ok(Some(Box::new(self)))
     }
 
     fn has_arm_interface(&self) -> bool {
         true
-    }
-}
-
-impl DAPAccess for ICDI<ICDIUSBDevice> {
-    /// Reads the DAP register on the specified port and address.
-    fn read_register(&mut self, port: PortType, addr: u16) -> Result<u32, DebugProbeError> {
-
-        Err(IcdiError::FixMeError(line!()).into())
-
-        // if (addr & 0xf0) == 0 || port != PortType::DebugPort {
-        //     if let PortType::AccessPort(port_number) = port {
-        //         self.select_ap(port_number as u8)?;
-        //     }
-
-        //     let port: u16 = port.into();
-
-        //     let cmd = &[
-        //         commands::JTAG_COMMAND,
-        //         commands::JTAG_READ_DAP_REG,
-        //         (port & 0xFF) as u8,
-        //         ((port >> 8) & 0xFF) as u8,
-        //         (addr & 0xFF) as u8,
-        //         ((addr >> 8) & 0xFF) as u8,
-        //     ];
-        //     let mut buf = [0; 8];
-        //     self.send_jtag_command(cmd, &[], &mut buf, TIMEOUT)?;
-        //     // Unwrap is ok!
-        //     Ok((&buf[4..8]).pread_with(0, LE).unwrap())
-        // } else {
-        //     Err(IcdiError::BlanksNotAllowedOnDPRegister.into())
-        // }
-    }
-
-    /// Writes a value to the DAP register on the specified port and address.
-    fn write_register(
-        &mut self,
-        port: PortType,
-        addr: u16,
-        value: u32,
-    ) -> Result<(), DebugProbeError> {
-        if (addr & 0xf0) == 0 || port != PortType::DebugPort {
-            if let PortType::AccessPort(port_number) = port {
-                self.select_ap(port_number as u8)?;
-            }
-
-            let port: u16 = port.into();
-
-            let cmd = &[
-                commands::JTAG_COMMAND,
-                commands::JTAG_WRITE_DAP_REG,
-                (port & 0xFF) as u8,
-                ((port >> 8) & 0xFF) as u8,
-                (addr & 0xFF) as u8,
-                ((addr >> 8) & 0xFF) as u8,
-                (value & 0xFF) as u8,
-                ((value >> 8) & 0xFF) as u8,
-                ((value >> 16) & 0xFF) as u8,
-                ((value >> 24) & 0xFF) as u8,
-            ];
-            let mut buf = [0; 2];
-            self.send_jtag_command(cmd, &[], &mut buf, TIMEOUT)?;
-
-            // Ensure the write is actually performed.
-            self.flush()?;
-
-            Ok(())
-        } else {
-            Err(IcdiError::BlanksNotAllowedOnDPRegister.into())
-        }
-    }
-
-    fn flush(&mut self) -> Result<(), DebugProbeError> {
-        self.read_register(PortType::DebugPort, 0xc)?;
-
-        Ok(())
-    }
-
-    fn into_probe(self: Box<Self>) -> Box<dyn DebugProbe> {
-        self
     }
 }
 
@@ -450,8 +371,8 @@ impl<D: IcdiUsb> ICDI<D> {
         log::debug!("result '{}'", reply);
 
         check_result(reply)
-    }
 
+    }
     fn get_supported(&mut self) -> Result<usize, DebugProbeError> {
         log::debug!("Get supported");
 
@@ -1019,31 +940,6 @@ impl<D: IcdiUsb> ICDI<D> {
     }
 }
 
-// impl<D: IcdiUsb> SwoAccess for ICDI<D> {
-//     fn enable_swo(&mut self, config: &SwoConfig) -> Result<(), ProbeRsError> {
-//         match config.mode() {
-//             SwoMode::UART => {
-//                 self.start_trace_reception(config)?;
-//                 Ok(())
-//             }
-//             SwoMode::Manchester => Err(DebugProbeError::ProbeSpecific(
-//                 IcdiError::ManchesterSwoNotSupported.into(),
-//             )
-//             .into()),
-//         }
-//     }
-
-//     fn disable_swo(&mut self) -> Result<(), ProbeRsError> {
-//         self.stop_trace_reception()?;
-//         Ok(())
-//     }
-
-//     fn read_swo_timeout(&mut self, timeout: Duration) -> Result<Vec<u8>, ProbeRsError> {
-//         let data = self.read_swo_data(timeout)?;
-//         Ok(data)
-//     }
-// }
-
 #[derive(Error, Debug)]
 pub(crate) enum IcdiError {
     #[error("Invalid voltage values returned by probe.")]
@@ -1084,587 +980,167 @@ impl From<IcdiError> for ProbeCreationError {
     }
 }
 
-#[derive(Debug)]
-struct IcdiArmDebug {
-    probe: Box<ICDI<ICDIUSBDevice>>,
-    state: ArmCommunicationInterfaceState,
-}
-
-impl IcdiArmDebug {
-    fn new(probe: Box<ICDI<ICDIUSBDevice>>) -> Result<Self, DebugProbeError> {
-        let state = ArmCommunicationInterfaceState::new();
-
-        // Determine the number and type of available APs.
-
-        let mut interface = Self { probe, state };
-
-        for ap in valid_access_ports(&mut interface) {
-            let ap_state = interface.read_ap_information(ap)?;
-
-            log::debug!("AP {}: {:?}", ap.port_number(), ap_state);
-
-            interface.state.ap_information.push(ap_state);
-        }
-
-        Ok(interface)
-    }
-
-    /// Read information about an AP from its registers.
-    ///
-    /// This reads the IDR register of the AP, and parses
-    /// further AP specific information based on its class.
-    ///
-    /// Currently, AP specific information is read for Memory APs.
-    fn read_ap_information(
-        &mut self,
-        access_port: GenericAP,
-    ) -> Result<ApInformation, DebugProbeError> {
-        let idr = self.read_ap_register(access_port, IDR::default())?;
-
-        if idr.CLASS == APClass::MEMAP {
-            let access_port: MemoryAP = access_port.into();
-
-            let base_register = self.read_ap_register(access_port, BASE::default())?;
-
-            let mut base_address = if BaseaddrFormat::ADIv5 == base_register.Format {
-                let base2 = self.read_ap_register(access_port, BASE2::default())?;
-
-                u64::from(base2.BASEADDR) << 32
-            } else {
-                0
-            };
-            base_address |= u64::from(base_register.BASEADDR << 12);
-
-            log::debug!(
-                "AP {} - BaseAddress: {:#08x}",
-                access_port.port_number(),
-                base_address
-            );
-
-            // Ensure that we can access this AP.
-            let status = self.read_ap_register(access_port, CSW::default())?;
-
-            log::debug!("AP {} - {:?}", access_port.port_number(), status);
-
-            // TODO: Figure out how to handle this for STM32,
-            //       it is not clear how the memory accesses work
-            //       with the dedicated API
-            let only_32bit_data_size = false;
-
-            Ok(ApInformation::MemoryAp {
-                port_number: access_port.port_number(),
-                only_32bit_data_size,
-                debug_base_address: base_address,
-            })
-        } else {
-            Ok(ApInformation::Other {
-                port_number: access_port.port_number(),
-            })
-        }
-    }
-
-    /// Read the given register `R` of the given `AP`, where the read register value is wrapped in
-    /// the given `register` parameter.
-    pub fn read_ap_register<AP, R>(
-        &mut self,
-        port: impl Into<AP>,
-        _register: R,
-    ) -> Result<R, DebugProbeError>
-    where
-        AP: AccessPort,
-        R: APRegister<AP>,
-    {
-        log::debug!("Reading register {}", R::NAME);
-        self.select_ap_and_ap_bank(port.into().port_number(), R::APBANKSEL)?;
-
-        let result = self.probe.read_register(
-            PortType::AccessPort(u16::from(self.state.current_apsel)),
-            u16::from(R::ADDRESS),
-        )?;
-
-        log::debug!("Read register    {}, value=0x{:08x}", R::NAME, result);
-
-        Ok(R::from(result))
-    }
-
-    fn select_dp_bank(&mut self, dp_bank: DPBankSel) -> Result<(), DebugPortError> {
-        match dp_bank {
-            DPBankSel::Bank(new_bank) => {
-                if new_bank != self.state.current_dpbanksel {
-                    self.state.current_dpbanksel = new_bank;
-
-                    let mut select = Select(0);
-
-                    log::debug!("Changing DP_BANK_SEL to {}", self.state.current_dpbanksel);
-
-                    select.set_ap_sel(self.state.current_apsel);
-                    select.set_ap_bank_sel(self.state.current_apbanksel);
-                    select.set_dp_bank_sel(self.state.current_dpbanksel);
-
-                    self.write_dp_register(select)?;
-                }
-            }
-            DPBankSel::DontCare => (),
-        }
-
-        Ok(())
-    }
-
-    fn select_ap_and_ap_bank(&mut self, port: u8, ap_bank: u8) -> Result<(), DebugProbeError> {
-        let mut cache_changed = if self.state.current_apsel != port {
-            self.state.current_apsel = port;
-            true
-        } else {
-            false
-        };
-
-        if self.state.current_apbanksel != ap_bank {
-            self.state.current_apbanksel = ap_bank;
-            cache_changed = true;
-        }
-
-        if cache_changed {
-            let mut select = Select(0);
-
-            log::debug!(
-                "Changing AP to {}, AP_BANK_SEL to {}",
-                self.state.current_apsel,
-                self.state.current_apbanksel
-            );
-
-            select.set_ap_sel(self.state.current_apsel);
-            select.set_ap_bank_sel(self.state.current_apbanksel);
-            select.set_dp_bank_sel(self.state.current_dpbanksel);
-
-            self.write_dp_register(select)?;
-        }
-
-        Ok(())
-    }
-
-    fn select_ap(&mut self, port: impl AccessPort) -> Result<(), DebugProbeError> {
-        // Change AP, leave ap_bank_sel the same.
-        self.probe.select_ap(port.port_number())?;
-
-        Ok(())
-    }
-
-    /// Write the given register `R` of the given `AP`, where the to be written register value
-    /// is wrapped in the given `register` parameter.
-    pub fn write_ap_register<AP, R>(
-        &mut self,
-        port: impl Into<AP>,
-        register: R,
-    ) -> Result<(), DebugProbeError>
-    where
-        AP: AccessPort,
-        R: APRegister<AP>,
-    {
-        let register_value = register.into();
-
-        log::debug!(
-            "Writing register {}, value=0x{:08X}",
-            R::NAME,
-            register_value
-        );
-
-        self.select_ap_and_ap_bank(port.into().port_number(), R::APBANKSEL)?;
-
-        self.probe.write_register(
-            PortType::AccessPort(u16::from(self.state.current_apsel)),
-            u16::from(R::ADDRESS),
-            register_value,
-        )?;
-
-        // Read from AP register
-        Ok(())
-    }
-
-    // TODO: Fix this ugly: _register: R, values: &[u32]
-    /// Write the given register `R` of the given `AP` repeatedly, where the to be written register
-    /// values are stored in the `values` array. The values are written in the exact order they are
-    /// stored in the array.
-    pub fn write_ap_register_repeated<AP, R>(
-        &mut self,
-        port: impl Into<AP>,
-        _register: R,
-        values: &[u32],
-    ) -> Result<(), DebugProbeError>
-    where
-        AP: AccessPort,
-        R: APRegister<AP>,
-    {
-        log::debug!(
-            "Writing register {}, block with len={} words",
-            R::NAME,
-            values.len(),
-        );
-
-        self.select_ap_and_ap_bank(port.into().port_number(), R::APBANKSEL)?;
-
-        self.probe.write_block(
-            PortType::AccessPort(u16::from(self.state.current_apsel)),
-            u16::from(R::ADDRESS),
-            values,
-        )?;
-        Ok(())
-    }
-
-    // TODO: fix types, see above!
-    /// Read the given register `R` of the given `AP` repeatedly, where the read register values
-    /// are stored in the `values` array. The values are read in the exact order they are stored in
-    /// the array.
-    pub fn read_ap_register_repeated<AP, R>(
-        &mut self,
-        port: impl Into<AP>,
-        _register: R,
-        values: &mut [u32],
-    ) -> Result<(), DebugProbeError>
-    where
-        AP: AccessPort,
-        R: APRegister<AP>,
-    {
-        log::debug!(
-            "Reading register {}, block with len={} words",
-            R::NAME,
-            values.len(),
-        );
-
-        self.select_ap_and_ap_bank(port.into().port_number(), R::APBANKSEL)?;
-
-        self.probe.read_block(
-            PortType::AccessPort(u16::from(self.state.current_apsel)),
-            u16::from(R::ADDRESS),
-            values,
-        )?;
-        Ok(())
-    }
-}
-
-impl DPAccess for IcdiArmDebug {
-    fn read_dp_register<R: DPRegister>(&mut self) -> Result<R, DebugPortError> {
-        if R::VERSION > self.state.debug_port_version {
-            return Err(DebugPortError::UnsupportedRegister {
-                register: R::NAME,
-                version: self.state.debug_port_version,
-            });
-        }
-
-        self.select_dp_bank(R::DP_BANK)?;
-
-        log::debug!("Reading DP register {}", R::NAME);
-        let result = self
-            .probe
-            .read_register(PortType::DebugPort, u16::from(R::ADDRESS))?;
-
-        log::debug!("Read    DP register {}, value=0x{:08x}", R::NAME, result);
-
-        Ok(result.into())
-    }
-
-    fn write_dp_register<R: DPRegister>(&mut self, register: R) -> Result<(), DebugPortError> {
-        if R::VERSION > self.state.debug_port_version {
-            return Err(DebugPortError::UnsupportedRegister {
-                register: R::NAME,
-                version: self.state.debug_port_version,
-            });
-        }
-
-        self.select_dp_bank(R::DP_BANK)?;
-
-        let value = register.into();
-
-        log::debug!("Writing DP register {}, value=0x{:08x}", R::NAME, value);
-        self.probe
-            .write_register(PortType::DebugPort, R::ADDRESS as u16, value)?;
-
-        Ok(())
-    }
-}
-
-// impl<'probe> ArmProbeInterface for IcdiArmDebug {
-//     fn memory_interface(&mut self, access_port: MemoryAP) -> Result<Memory<'_>, ProbeRsError> {
-//         let interface = IcdiMemoryInterface {
-//             probe: self,
-//             access_port,
-//         };
-
-//         Ok(Memory::new(interface))
-//     }
-
-//     fn ap_information(
-//         &self,
-//         access_port: crate::architecture::arm::ap::GenericAP,
-//     ) -> Option<&crate::architecture::arm::communication_interface::ApInformation> {
-//         self.state
-//             .ap_information
-//             .get(access_port.port_number() as usize)
-//     }
-
-//     fn read_from_rom_table(
-//         &mut self,
-//     ) -> Result<Option<crate::architecture::arm::ArmChipInfo>, ProbeRsError> {
-//         for access_port in valid_access_ports(self) {
-//             let idr = self
-//                 .read_ap_register(access_port, IDR::default())
-//                 .map_err(ProbeRsError::Probe)?;
-//             log::debug!("{:#x?}", idr);
-
-//             if idr.CLASS == APClass::MEMAP {
-//                 let access_port: MemoryAP = access_port.into();
-
-//                 let baseaddr = access_port.base_address(self)?;
-
-//                 let mut memory = self
-//                     .memory_interface(access_port)
-//                     .map_err(ProbeRsError::architecture_specific)?;
-
-//                 let component = Component::try_parse(&mut memory, baseaddr)
-//                     .map_err(ProbeRsError::architecture_specific)?;
-
-//                 if let Component::Class1RomTable(component_id, _) = component {
-//                     if let Some(jep106) = component_id.peripheral_id().jep106() {
-//                         return Ok(Some(ArmChipInfo {
-//                             manufacturer: jep106,
-//                             part: component_id.peripheral_id().part(),
-//                         }));
-//                     }
-//                 }
-//             }
-//         }
-
-//         Ok(None)
-//     }
-
-//     fn num_access_ports(&self) -> usize {
-//         self.state.ap_information.len()
-//     }
-
-//     fn close(self: Box<Self>) -> Probe {
-//         Probe::from_attached_probe(self.probe)
-//     }
+// #[derive(Debug)]
+// struct IcdiMemoryInterface<'probe> {
+//     probe: &'probe mut ICDI<ICDIUSBDevice>,
+//     access_port: MemoryAP,
 // }
 
-impl<AP, R> APAccess<AP, R> for IcdiArmDebug
-where
-    R: APRegister<AP> + Clone,
-    AP: AccessPort,
-{
-    type Error = DebugProbeError;
-
-    fn read_ap_register(&mut self, port: impl Into<AP>, register: R) -> Result<R, Self::Error> {
-        self.read_ap_register(port, register)
-    }
-
-    fn write_ap_register(&mut self, port: impl Into<AP>, register: R) -> Result<(), Self::Error> {
-        self.write_ap_register(port, register)
-    }
-
-    fn write_ap_register_repeated(
-        &mut self,
-        port: impl Into<AP> + Clone,
-        register: R,
-        values: &[u32],
-    ) -> Result<(), Self::Error> {
-        self.write_ap_register_repeated(port, register, values)
-    }
-
-    fn read_ap_register_repeated(
-        &mut self,
-        port: impl Into<AP> + Clone,
-        register: R,
-        values: &mut [u32],
-    ) -> Result<(), Self::Error> {
-        self.read_ap_register_repeated(port, register, values)
-    }
-}
-
-impl<'a> AsRef<dyn DebugProbe + 'a> for IcdiArmDebug {
-    fn as_ref(&self) -> &(dyn DebugProbe + 'a) {
-        self.probe.as_ref()
-    }
-}
-
-impl<'a> AsMut<dyn DebugProbe + 'a> for IcdiArmDebug {
-    fn as_mut(&mut self) -> &mut (dyn DebugProbe + 'a) {
-        self.probe.as_mut()
-    }
-}
-
-// impl SwoAccess for IcdiArmDebug {
-//     fn enable_swo(&mut self, config: &SwoConfig) -> Result<(), ProbeRsError> {
-//         self.probe.enable_swo(config)
-//     }
-
-//     fn disable_swo(&mut self) -> Result<(), ProbeRsError> {
-//         self.probe.disable_swo()
-//     }
-
-//     fn read_swo_timeout(&mut self, timeout: Duration) -> Result<Vec<u8>, ProbeRsError> {
-//         self.probe.read_swo_timeout(timeout)
-//     }
-// }
-
-#[derive(Debug)]
-struct IcdiMemoryInterface<'probe> {
-    probe: &'probe mut IcdiArmDebug,
-    access_port: MemoryAP,
-}
-
-impl MemoryInterface for IcdiMemoryInterface<'_> {
+impl<D: IcdiUsb> MemoryInterface for ICDI<D> {
     fn read_word_32(&mut self, address: u32) -> Result<u32, ProbeRsError> {
-        self.probe.select_ap(self.access_port)?;
+//        self.probe.select_ap(self.access_port)?;
 
-        let mut buff = [0];
-        self.read_32(address, &mut buff)?;
+        // let mut buff = [0];
+        // let cmd = format!("x{x},{x}", address, len)
+        // self.probe.
 
-        Ok(buff[0])
+        Ok(0)
     }
 
     fn read_word_8(&mut self, address: u32) -> Result<u8, ProbeRsError> {
-        self.probe.select_ap(self.access_port)?;
+        // self.probe.select_ap(self.access_port)?;
 
-        let mut buff = [0u8];
-        self.read_8(address, &mut buff)?;
+        // let mut buff = [0u8];
+        // self.read_8(address, &mut buff)?;
 
-        Ok(buff[0])
+        Ok(0)
     }
 
     fn read_32(&mut self, address: u32, data: &mut [u32]) -> Result<(), ProbeRsError> {
-        self.probe.select_ap(self.access_port)?;
+        // self.probe.select_ap(self.access_port)?;
 
-        let received_words = self.probe.probe.read_mem_32bit(
-            address,
-            data.len() as u16,
-            self.access_port.port_number(),
-        )?;
+        // let received_words = self.probe.probe.read_mem_32bit(
+        //     address,
+        //     data.len() as u16,
+        //     self.access_port.port_number(),
+        // )?;
 
-        data.copy_from_slice(&received_words);
+        // data.copy_from_slice(&received_words);
 
         Ok(())
     }
 
     fn read_8(&mut self, address: u32, data: &mut [u8]) -> Result<(), ProbeRsError> {
-        self.probe.select_ap(self.access_port)?;
+        // self.probe.select_ap(self.access_port)?;
 
-        let received_words = self.probe.probe.read_mem_8bit(
-            address,
-            data.len() as u16,
-            self.access_port.port_number(),
-        )?;
+        // let received_words = self.probe.probe.read_mem_8bit(
+        //     address,
+        //     data.len() as u16,
+        //     self.access_port.port_number(),
+        // )?;
 
-        data.copy_from_slice(&received_words);
+        // data.copy_from_slice(&received_words);
 
         Ok(())
     }
 
     fn write_word_32(&mut self, address: u32, data: u32) -> Result<(), ProbeRsError> {
-        self.probe.select_ap(self.access_port)?;
+        // self.probe.select_ap(self.access_port)?;
 
-        self.write_32(address, &[data])?;
+        // self.write_32(address, &[data])?;
 
         Ok(())
     }
 
     fn write_word_8(&mut self, address: u32, data: u8) -> Result<(), ProbeRsError> {
-        self.probe.select_ap(self.access_port)?;
+        // self.probe.select_ap(self.access_port)?;
 
         self.write_8(address, &[data])
     }
 
     fn write_32(&mut self, address: u32, data: &[u32]) -> Result<(), ProbeRsError> {
-        self.probe.select_ap(self.access_port)?;
+        // self.probe.select_ap(self.access_port)?;
 
-        self.probe
-            .probe
-            .write_mem_32bit(address, data, self.access_port.port_number())?;
+        // self.probe
+        //     .probe
+        //     .write_mem_32bit(address, data, self.access_port.port_number())?;
         Ok(())
     }
 
     fn write_8(&mut self, address: u32, data: &[u8]) -> Result<(), ProbeRsError> {
-        self.probe.select_ap(self.access_port)?;
+        // self.probe.select_ap(self.access_port)?;
 
-        let chunk_size = if self.probe.probe.hw_version < 3 {
-            64
-        } else {
-            512
-        };
+        // let chunk_size = if self.probe.probe.hw_version < 3 {
+        //     64
+        // } else {
+        //     512
+        // };
 
-        // If we write less than 64 bytes, just write it directly
-        if data.len() < chunk_size {
-            log::trace!("write_8: small - direct 8 bit write to {:08x}", address);
-            self.probe
-                .probe
-                .write_mem_8bit(address, data, self.access_port.port_number())?;
-        } else {
-            // Handle unaligned data in the beginning.
-            let bytes_beginning = if address % 4 == 0 {
-                0
-            } else {
-                (4 - address % 4) as usize
-            };
+        // // If we write less than 64 bytes, just write it directly
+        // if data.len() < chunk_size {
+        //     log::trace!("write_8: small - direct 8 bit write to {:08x}", address);
+        //     self.probe
+        //         .probe
+        //         .write_mem_8bit(address, data, self.access_port.port_number())?;
+        // } else {
+        //     // Handle unaligned data in the beginning.
+        //     let bytes_beginning = if address % 4 == 0 {
+        //         0
+        //     } else {
+        //         (4 - address % 4) as usize
+        //     };
 
-            let mut current_address = address;
+        //     let mut current_address = address;
 
-            if bytes_beginning > 0 {
-                log::warn!(
-                    "write_8: at_begin - unaligned write of {} bytes to address {:08x}",
-                    bytes_beginning,
-                    current_address,
-                );
-                self.probe.probe.write_mem_8bit(
-                    current_address,
-                    &data[..bytes_beginning],
-                    self.access_port.port_number(),
-                )?;
+        //     if bytes_beginning > 0 {
+        //         log::warn!(
+        //             "write_8: at_begin - unaligned write of {} bytes to address {:08x}",
+        //             bytes_beginning,
+        //             current_address,
+        //         );
+        //         self.probe.probe.write_mem_8bit(
+        //             current_address,
+        //             &data[..bytes_beginning],
+        //             self.access_port.port_number(),
+        //         )?;
 
-                current_address += bytes_beginning as u32;
-            }
+        //         current_address += bytes_beginning as u32;
+        //     }
 
-            // Address has to be aligned here.
-            assert!(current_address % 4 == 0);
+        //     // Address has to be aligned here.
+        //     assert!(current_address % 4 == 0);
 
-            // Convert bytes to u32
-            let mut chunks_iter = (&data[bytes_beginning..]).chunks_exact(4);
+        //     // Convert bytes to u32
+        //     let mut chunks_iter = (&data[bytes_beginning..]).chunks_exact(4);
 
-            let words: Vec<u32> = (&mut chunks_iter)
-                .map(|c| u32::from_le_bytes(c.try_into().unwrap()))
-                .collect();
+        //     let words: Vec<u32> = (&mut chunks_iter)
+        //         .map(|c| u32::from_le_bytes(c.try_into().unwrap()))
+        //         .collect();
 
-            log::trace!(
-                "write_8: aligned write of {} bytes to address {:08x}",
-                words.len() * 4,
-                current_address,
-            );
+        //     log::trace!(
+        //         "write_8: aligned write of {} bytes to address {:08x}",
+        //         words.len() * 4,
+        //         current_address,
+        //     );
 
-            self.probe.probe.write_mem_32bit(
-                current_address,
-                &words,
-                self.access_port.port_number(),
-            )?;
+        //     self.probe.probe.write_mem_32bit(
+        //         current_address,
+        //         &words,
+        //         self.access_port.port_number(),
+        //     )?;
 
-            current_address += (words.len() * 4) as u32;
+        //     current_address += (words.len() * 4) as u32;
 
-            let remaining_bytes = chunks_iter.remainder();
+        //     let remaining_bytes = chunks_iter.remainder();
 
-            if !remaining_bytes.is_empty() {
-                log::trace!(
-                    "write_8: at_end -unaligned write of {} bytes to address {:08x}",
-                    bytes_beginning,
-                    current_address,
-                );
-                self.probe.probe.write_mem_8bit(
-                    current_address,
-                    remaining_bytes,
-                    self.access_port.port_number(),
-                )?;
-            }
-        }
+        //     if !remaining_bytes.is_empty() {
+        //         log::trace!(
+        //             "write_8: at_end -unaligned write of {} bytes to address {:08x}",
+        //             bytes_beginning,
+        //             current_address,
+        //         );
+        //         self.probe.probe.write_mem_8bit(
+        //             current_address,
+        //             remaining_bytes,
+        //             self.access_port.port_number(),
+        //         )?;
+        //     }
+        // }
         Ok(())
     }
 
     fn flush(&mut self) -> Result<(), ProbeRsError> {
-        self.probe.probe.flush()?;
+//        self.probe.probe.flush()?;
 
         Ok(())
     }
