@@ -686,15 +686,14 @@ impl<D: IcdiUsb> ICDI<D> {
     fn read_mem_32bit(
         &mut self,
         address: u32,
-        length: u16,
-        apsel: u8,
+        length: u16
     ) -> Result<Vec<u32>, DebugProbeError> {
         log::debug!(
             "Read mem 32 bit, address={:08x}, length={}",
             address,
             length
         );
-        Err(IcdiError::FixMeError(line!()).into())
+
         // // Maximum supported read length is 2^16 bytes.
         // assert!(
         //     length < (u16::MAX / 4),
@@ -705,35 +704,42 @@ impl<D: IcdiUsb> ICDI<D> {
         //     todo!("Should return an error here");
         // }
 
-        // let byte_length = length * 4;
+        let byte_length = length * 4;
 
-        // let mut receive_buffer = vec![0u8; byte_length as usize];
+        // Longest answer possible:
+        // $OK#CC}x}x}x}x}x}x#CC
+        // with :
+        //  - CC the 2 checksum
+        //  - }x an escaped byte payload (occupies 2 bytes)
+        //        let mut receive_buffer = vec![0u8; (6 + byte_length*2 + 3) as usize];
 
-        // self.device.write(
-        //     &[
-        //         commands::JTAG_COMMAND,
-        //         commands::JTAG_READMEM_32BIT,
-        //         address as u8,
-        //         (address >> 8) as u8,
-        //         (address >> 16) as u8,
-        //         (address >> 24) as u8,
-        //         byte_length as u8,
-        //         (byte_length >> 8) as u8,
-        //         apsel,
-        //     ],
-        //     &[],
-        //     &mut receive_buffer,
-        //     TIMEOUT,
-        // )?;
+        let mut recv_ok = vec![0u8; 2];
+        self.device.write(
+            &format!("x{:08x},{:x}", address, byte_length).into_bytes(),
+            &mut recv_ok,
+            TIMEOUT,
+        )?;
+
+        let reply = std::str::from_utf8(&recv_ok).unwrap();
+        log::debug!("result '{}'", reply);
+
+        check_result(reply)?;
 
         // self.get_last_rw_status()?;
 
-        // let words: Vec<u32> = receive_buffer
-        //     .chunks_exact(4)
-        //     .map(|chunk| u32::from_le_bytes(chunk.try_into().unwrap()))
-        //     .collect();
+        let mut recv_payload = vec![0u8; byte_length as usize];
+        self.device.write(
+            &[],
+            &mut recv_payload,
+            TIMEOUT,
+        )?;
 
-        // Ok(words)
+        let words: Vec<u32> = recv_payload
+            .chunks_exact(4)
+            .map(|chunk| u32::from_le_bytes(chunk.try_into().unwrap()))
+            .collect();
+
+        Ok(words)
     }
 
     fn read_mem_8bit(
@@ -1229,7 +1235,12 @@ impl SwoAccess for IcdiArmDebug {
 impl MemoryInterface for IcdiArmDebug {
     fn read_word_32(&mut self, address: u32) -> Result<u32, ProbeRsError> {
         log::trace!("read_word_32 {:08x}", address);
-        unimplemented!();
+
+        let received_words = self.probe.read_mem_32bit(address, 1)?;
+
+        Ok(received_words[0])
+
+//        unimplemented!();
     }
 
     fn read_word_8(&mut self, address: u32) -> Result<u8, ProbeRsError> {
