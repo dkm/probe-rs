@@ -148,10 +148,10 @@ impl DebugProbe for ICDI<ICDIUSBDevice> {
     fn get_arm_interface<'probe>(
         self: Box<Self>,
     ) -> Result<Option<Box<dyn ArmProbeInterface + 'probe>>, DebugProbeError> {
-        unimplemented!();
-        // let interface = IcdiArmDebug::new(self)?;
+        //unimplemented!();
+        let interface = IcdiArmDebug::new(self)?;
 
-        Ok(Some(Box::new(self)))
+        Ok(Some(Box::new(interface)))
     }
 
     fn has_arm_interface(&self) -> bool {
@@ -1145,6 +1145,130 @@ impl<D: IcdiUsb> MemoryInterface for ICDI<D> {
         Ok(())
     }
 }
+
+
+#[derive(Debug)]
+struct IcdiArmDebug {
+    probe: Box<ICDI<ICDIUSBDevice>>,
+    state: ArmCommunicationInterfaceState,
+}
+
+impl IcdiArmDebug {
+    fn new(probe: Box<ICDI<ICDIUSBDevice>>) -> Result<Self, DebugProbeError> {
+        let state = ArmCommunicationInterfaceState::new();
+
+        // Determine the number and type of available APs.
+
+        let mut interface = Self { probe, state };
+        Ok(interface)
+    }
+}
+
+impl<'probe> ArmProbeInterface for IcdiArmDebug {
+    fn memory_interface(&mut self, access_port: MemoryAP) -> Result<Memory<'_>, ProbeRsError> {
+        Ok(Memory::new(self))
+    }
+
+    fn ap_information(
+        &self,
+        access_port: crate::architecture::arm::ap::GenericAP,
+    ) -> Option<&crate::architecture::arm::communication_interface::ApInformation> {
+        Some(&crate::architecture::arm::communication_interface::ApInformation::MemoryAp {
+            port_number: 0,
+            only_32bit_data_size: false,
+            debug_base_address: 0
+        })
+    }
+
+    fn read_from_rom_table(
+        &mut self,
+    ) -> Result<Option<crate::architecture::arm::ArmChipInfo>, ProbeRsError> {
+//        unimplemented!();
+        Ok(None)
+    }
+
+    fn num_access_ports(&self) -> usize {
+        1
+        //        self.state.ap_information.len()
+    }
+
+    fn close(self: Box<Self>) -> Probe {
+        Probe::from_attached_probe(self.probe)
+    }
+}
+
+impl<'a> AsRef<dyn DebugProbe + 'a> for IcdiArmDebug {
+    fn as_ref(&self) -> &(dyn DebugProbe + 'a) {
+        self.probe.as_ref()
+    }
+}
+
+impl<'a> AsMut<dyn DebugProbe + 'a> for IcdiArmDebug {
+    fn as_mut(&mut self) -> &mut (dyn DebugProbe + 'a) {
+        self.probe.as_mut()
+    }
+}
+
+impl SwoAccess for IcdiArmDebug {
+    fn enable_swo(&mut self, config: &SwoConfig) -> Result<(), ProbeRsError> {
+        unimplemented!();
+        //        self.probe.enable_swo(config)
+    }
+
+    fn disable_swo(&mut self) -> Result<(), ProbeRsError> {
+        unimplemented!();
+//        self.probe.disable_swo()
+    }
+
+    fn read_swo_timeout(&mut self, timeout: Duration) -> Result<Vec<u8>, ProbeRsError> {
+        unimplemented!();
+//        self.probe.read_swo_timeout(timeout)
+    }
+}
+
+impl MemoryInterface for IcdiArmDebug {
+    fn read_word_32(&mut self, address: u32) -> Result<u32, ProbeRsError> {
+        log::trace!("read_word_32 {:08x}", address);
+        unimplemented!();
+    }
+
+    fn read_word_8(&mut self, address: u32) -> Result<u8, ProbeRsError> {
+        log::trace!("read_word_8 {:08x}", address);
+        unimplemented!();
+    }
+
+    fn read_32(&mut self, address: u32, data: &mut [u32]) -> Result<(), ProbeRsError> {
+        log::trace!("read_32 {:08x} len {}", address, data.len());
+        unimplemented!();
+    }
+
+    fn read_8(&mut self, address: u32, data: &mut [u8]) -> Result<(), ProbeRsError> {
+        log::trace!("read_8 {:08x} len {}", address, data.len());
+        unimplemented!();
+    }
+
+    fn write_word_32(&mut self, address: u32, data: u32) -> Result<(), ProbeRsError> {
+        log::trace!("write_word_32 {:08x} => {:08x}", address, data);
+        unimplemented!();
+    }
+
+    fn write_word_8(&mut self, address: u32, data: u8) -> Result<(), ProbeRsError> {
+        unimplemented!();
+    }
+
+    fn write_32(&mut self, address: u32, data: &[u32]) -> Result<(), ProbeRsError> {
+        unimplemented!();
+    }
+
+    fn write_8(&mut self, address: u32, data: &[u8]) -> Result<(), ProbeRsError> {
+        unimplemented!();
+    }
+
+    fn flush(&mut self) -> Result<(), ProbeRsError> {
+        unimplemented!();
+    }
+}
+
 
 // #[cfg(test)]
 // mod test {
