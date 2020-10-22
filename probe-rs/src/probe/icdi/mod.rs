@@ -365,13 +365,12 @@ impl<D: IcdiUsb> ICDI<D> {
     fn set_extended_mode(&mut self) -> Result<(), DebugProbeError> {
         log::debug!("Get supported");
 
-        let mut reply = [0u8; 128];
+        let mut reply = [0u8; 2];
         self.device.write(b"!", &mut reply, TIMEOUT)?;
         let reply = std::str::from_utf8(&reply).unwrap();
         log::debug!("result '{}'", reply);
 
         check_result(reply)
-
     }
     fn get_supported(&mut self) -> Result<usize, DebugProbeError> {
         log::debug!("Get supported");
@@ -683,11 +682,7 @@ impl<D: IcdiUsb> ICDI<D> {
         )
     }
 
-    fn read_mem_32bit(
-        &mut self,
-        address: u32,
-        length: u16
-    ) -> Result<Vec<u32>, DebugProbeError> {
+    fn read_mem_32bit(&mut self, address: u32, length: u16) -> Result<Vec<u32>, DebugProbeError> {
         log::debug!(
             "Read mem 32 bit, address={:08x}, length={}",
             address,
@@ -713,28 +708,28 @@ impl<D: IcdiUsb> ICDI<D> {
         //  - }x an escaped byte payload (occupies 2 bytes)
         //        let mut receive_buffer = vec![0u8; (6 + byte_length*2 + 3) as usize];
 
-        let mut recv_ok = vec![0u8; 2];
+        let mut recv_data = vec![0u8; 4];
+
         self.device.write(
             &format!("x{:08x},{:x}", address, byte_length).into_bytes(),
-            &mut recv_ok,
+            &mut recv_data,
             TIMEOUT,
         )?;
 
-        let reply = std::str::from_utf8(&recv_ok).unwrap();
-        log::debug!("result '{}'", reply);
-
-        check_result(reply)?;
+        //        let reply = std::str::from_utf8(&recv_data).unwrap();
+        log::debug!("result  {:x?}", recv_data);
+        //        check_result(reply)?;
 
         // self.get_last_rw_status()?;
 
-        let mut recv_payload = vec![0u8; byte_length as usize];
-        self.device.write(
-            &[],
-            &mut recv_payload,
-            TIMEOUT,
-        )?;
+        // let mut recv_payload = vec![0u8; byte_length as usize];
+        // self.device.write(
+        //     &[],
+        //     &mut recv_payload,
+        //     TIMEOUT,
+        // )?;
 
-        let words: Vec<u32> = recv_payload
+        let words: Vec<u32> = recv_data
             .chunks_exact(4)
             .map(|chunk| u32::from_le_bytes(chunk.try_into().unwrap()))
             .collect();
@@ -774,15 +769,9 @@ impl<D: IcdiUsb> ICDI<D> {
         // Ok(receive_buffer)
     }
 
-    fn write_mem_32bit(
-        &mut self,
-        address: u32,
-        data: &[u32],
-        apsel: u8,
-    ) -> Result<(), DebugProbeError> {
+    fn write_mem_32bit(&mut self, address: u32, data: &[u32]) -> Result<(), DebugProbeError> {
         log::trace!("write_mem_32bit");
-        Err(IcdiError::FixMeError(line!()).into())
-        // let length = data.len();
+        let length = data.len();
 
         // // Maximum supported read length is 2^16 bytes.
         // assert!(
@@ -794,7 +783,25 @@ impl<D: IcdiUsb> ICDI<D> {
         //     todo!("Should return an error here");
         // }
 
-        // let byte_length = length * 4;
+        let byte_length = length * 4;
+
+        let mut tx_buffer = vec![0u8; byte_length];
+
+        let mut offset = 0;
+
+        for word in data {
+            tx_buffer
+                .gwrite(word, &mut offset)
+                .expect("Failed to write into tx_buffer");
+        }
+
+        let pkt_data = [
+            format!("X{:08x},{:x}:", address, byte_length).into_bytes(),
+            tx_buffer,
+        ]
+        .concat();
+
+        self.device.write(&pkt_data, &mut [], TIMEOUT)?;
 
         // let mut tx_buffer = vec![0u8; byte_length];
 
@@ -825,7 +832,7 @@ impl<D: IcdiUsb> ICDI<D> {
 
         // self.get_last_rw_status()?;
 
-        // Ok(())
+        Ok(())
     }
 
     fn write_mem_8bit(
@@ -994,7 +1001,7 @@ impl From<IcdiError> for ProbeCreationError {
 
 impl<D: IcdiUsb> MemoryInterface for ICDI<D> {
     fn read_word_32(&mut self, address: u32) -> Result<u32, ProbeRsError> {
-//        self.probe.select_ap(self.access_port)?;
+        //        self.probe.select_ap(self.access_port)?;
 
         // let mut buff = [0];
         // let cmd = format!("x{x},{x}", address, len)
@@ -1146,12 +1153,11 @@ impl<D: IcdiUsb> MemoryInterface for ICDI<D> {
     }
 
     fn flush(&mut self) -> Result<(), ProbeRsError> {
-//        self.probe.probe.flush()?;
+        //        self.probe.probe.flush()?;
 
         Ok(())
     }
 }
-
 
 #[derive(Debug)]
 struct IcdiArmDebug {
@@ -1179,17 +1185,19 @@ impl<'probe> ArmProbeInterface for IcdiArmDebug {
         &self,
         access_port: crate::architecture::arm::ap::GenericAP,
     ) -> Option<&crate::architecture::arm::communication_interface::ApInformation> {
-        Some(&crate::architecture::arm::communication_interface::ApInformation::MemoryAp {
-            port_number: 0,
-            only_32bit_data_size: false,
-            debug_base_address: 0
-        })
+        Some(
+            &crate::architecture::arm::communication_interface::ApInformation::MemoryAp {
+                port_number: 0,
+                only_32bit_data_size: false,
+                debug_base_address: 0,
+            },
+        )
     }
 
     fn read_from_rom_table(
         &mut self,
     ) -> Result<Option<crate::architecture::arm::ArmChipInfo>, ProbeRsError> {
-//        unimplemented!();
+        //        unimplemented!();
         Ok(None)
     }
 
@@ -1223,12 +1231,12 @@ impl SwoAccess for IcdiArmDebug {
 
     fn disable_swo(&mut self) -> Result<(), ProbeRsError> {
         unimplemented!();
-//        self.probe.disable_swo()
+        //        self.probe.disable_swo()
     }
 
     fn read_swo_timeout(&mut self, timeout: Duration) -> Result<Vec<u8>, ProbeRsError> {
         unimplemented!();
-//        self.probe.read_swo_timeout(timeout)
+        //        self.probe.read_swo_timeout(timeout)
     }
 }
 
@@ -1240,7 +1248,7 @@ impl MemoryInterface for IcdiArmDebug {
 
         Ok(received_words[0])
 
-//        unimplemented!();
+        //        unimplemented!();
     }
 
     fn read_word_8(&mut self, address: u32) -> Result<u8, ProbeRsError> {
@@ -1260,7 +1268,9 @@ impl MemoryInterface for IcdiArmDebug {
 
     fn write_word_32(&mut self, address: u32, data: u32) -> Result<(), ProbeRsError> {
         log::trace!("write_word_32 {:08x} => {:08x}", address, data);
-        unimplemented!();
+
+        self.probe.write_mem_32bit(address, &[data])?;
+        Ok(())
     }
 
     fn write_word_8(&mut self, address: u32, data: u8) -> Result<(), ProbeRsError> {
@@ -1279,7 +1289,6 @@ impl MemoryInterface for IcdiArmDebug {
         unimplemented!();
     }
 }
-
 
 // #[cfg(test)]
 // mod test {

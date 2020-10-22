@@ -215,12 +215,7 @@ fn create_packet(payload: &[u8]) -> Vec<u8> {
         cksum = c.wrapping_add(cksum);
     }
 
-    [
-        "$".as_bytes(),
-        payload,
-        format!("#{:02x}", cksum).as_bytes(),
-    ]
-    .concat()
+    [b"$", payload, format!("#{:02x}", cksum).as_bytes()].concat()
 }
 
 fn verify_packet(packet: &[u8]) -> Result<(), DebugProbeError> {
@@ -271,7 +266,7 @@ impl IcdiUsb for ICDIUSBDevice {
         for retry in 0..3 {
             if !write_data.is_empty() {
                 log::debug!(
-                    "Will write {} bytes (+3 bytes for CHKSUM)",
+                    "Will write {} bytes (+1byte for $ and +3 bytes for CHKSUM #xx)",
                     write_data.len()
                 );
 
@@ -314,29 +309,32 @@ impl IcdiUsb for ICDIUSBDevice {
 
         // Optional data in phase.
         if !read_data.is_empty() {
-            let mut read_data_pkt = vec![0u8; read_data.len() + 4];
+            // add 4 bytes: $OK: <data> #xx
+            let mut read_data_pkt = vec![0u8; read_data.len() + 7];
             log::debug!("Will read {} bytes", read_data_pkt.len());
             read_bytes = self
                 .device_handle
                 .read_bulk(ep_in, &mut read_data_pkt, timeout)
                 .map_err(|e| DebugProbeError::USB(Some(Box::new(e))))?;
-            // log::debug!("read finished {} bytes", read_bytes);
-            // log::debug!("read finished {:?} bytes", read_data_pkt);
-            // if read_bytes != read_data_pkt.len() {
-            //     return Err(IcdiError::NotEnoughBytesRead {
-            //         is: read_bytes,
-            //         should: read_data_pkt.len(),
-            //     }
-            //     .into());
-            // }
-            log::debug!(" --> {:?}", std::str::from_utf8(&read_data_pkt[..read_bytes]).unwrap());
-            if read_bytes < 4 || read_data_pkt[read_bytes - 3] != '#' as u8 {
+
+            log::debug!(
+                " --> {:?}",
+                std::str::from_utf8(&read_data_pkt[..read_bytes]).unwrap()
+            );
+
+            if read_bytes < 4 || read_data_pkt[read_bytes - 3] != b'#' {
                 return Err(IcdiError::InvalidProtocol.into());
             }
 
-            verify_packet(&read_data_pkt[..read_bytes])?;
+            if read_bytes > 5 && read_data_pkt[3] == b':' {
+                verify_packet(&read_data_pkt[3..read_bytes])?;
+                &read_data[..read_bytes - (1 + 3 + 3)]
+                    .copy_from_slice(&read_data_pkt[4..read_bytes - 3]);
+            } else {
+                verify_packet(&read_data_pkt[..read_bytes])?;
+                &read_data[..read_bytes - 4].copy_from_slice(&read_data_pkt[1..read_bytes - 3]);
+            }
 
-            &read_data[..read_bytes - 4].copy_from_slice(&read_data_pkt[1..read_bytes - 3]);
             log::debug!("read step done, checksum OK");
         }
         Ok((written_bytes, read_bytes))
