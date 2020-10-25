@@ -17,6 +17,8 @@ use crate::{
 /// The USB Command packet size.
 const CMD_LEN: usize = 16;
 
+const DEFAULT_BUF_SIZE: usize = 128;
+
 /// The USB VendorID.
 pub const USB_VID: u16 = 0x1cbe; // Luminary Micro Inc.
 
@@ -68,6 +70,8 @@ impl ICDIInfo {
 
 pub(crate) struct ICDIUSBDevice {
     device_handle: DeviceHandle<rusb::Context>,
+    read_buffer : Vec<u8>,
+    read_bytes: usize,
     info: ICDIInfo,
 }
 
@@ -194,6 +198,8 @@ impl ICDIUSBDevice {
         let usb_icdi = Self {
             device_handle,
             info,
+            read_buffer: vec![0u8;DEFAULT_BUF_SIZE],
+            read_bytes : 0,
         };
 
         log::debug!("Succesfully attached to ICDI.");
@@ -262,9 +268,13 @@ impl IcdiUsb for ICDIUSBDevice {
         let ep_in = self.info.ep_in;
 
         let mut written_bytes = 0;
+        self.read_bytes = 0;
+        self.read_buffer = vec![0; 128 as usize];
 
-        for retry in 0..3 {
-            if !write_data.is_empty() {
+        if !write_data.is_empty() {
+            let mut write_acked = false;
+
+            for retry in 0..3 {
                 log::debug!(
                     "Will write {} bytes (+1byte for $ and +3 bytes for CHKSUM #xx)",
                     write_data.len()
@@ -285,59 +295,82 @@ impl IcdiUsb for ICDIUSBDevice {
                         is: written_bytes,
                         should: packet.len(),
                     }
-                    .into());
+                               .into());
                 }
                 log::debug!("write step done");
-                let mut ack = [0u8];
-                let read_bytes = self
+                self.read_bytes = self
                     .device_handle
-                    .read_bulk(ep_in, &mut ack, timeout)
-                    .map_err(|e| DebugProbeError::USB(Some(Box::new(e))))?;
-                if read_bytes == 1 && ack[0] == '-' as u8 {
-                    log::debug!("looping, write not ACKed : {}", ack[0]);
-                } else if read_bytes == 1 && ack[0] != '+' as u8 {
+                    .read_bulk(ep_in, &mut self.read_buffer, timeout)
+                    .map_err(|e| DebugProbeError::USB(Some(Box::new(e)))).unwrap();
+
+                log::debug!("read something to see if ack: {:?} : {:?}", self.read_bytes, self.read_buffer);
+
+                if self.read_bytes > 0 && self.read_buffer[0] == '-' as u8 {
+                    log::debug!("looping, write not ACKed with '-'");
+                } else if (self.read_bytes > 0 && self.read_buffer[0] != b'+') || self.read_bytes == 0  {
+                    log::debug!("Unexpected answer {} / '{}'", self.read_buffer[0], self.read_buffer[0] as char);
                     // unexpected
                     return Err(IcdiError::FixMeError(line!()).into());
-                } else {
+                } else if self.read_bytes > 0 {
                     log::debug!("write ACKed");
+                    self.read_buffer.remove(0); // shift the leading +
+                    self.read_bytes -= 1;
+                    write_acked = true;
                     break;
                 }
             }
-        }
 
-        let mut read_bytes = 0;
+            if !write_acked {
+                log::debug!("write not ACKed");
+                return Err(IcdiError::InvalidProtocol.into());
+            } else {
+                log::debug!("write has been ACKed");
+            }
+        }
 
         // Optional data in phase.
-        if !read_data.is_empty() {
-            // add 4 bytes: $OK: <data> #xx
-            let mut read_data_pkt = vec![0u8; read_data.len() + 7];
-            log::debug!("Will read {} bytes", read_data_pkt.len());
-            read_bytes = self
-                .device_handle
-                .read_bulk(ep_in, &mut read_data_pkt, timeout)
-                .map_err(|e| DebugProbeError::USB(Some(Box::new(e))))?;
 
-            log::debug!(
-                " --> {:?}",
-                std::str::from_utf8(&read_data_pkt[..read_bytes]).unwrap()
-            );
+        // add 4 bytes: $OK: <data> #xx
+        //            let mut read_data_pkt = vec![0u8; read_data.len() + 7];
+        log::debug!("Will read data from endpoint (already {} in buffer)", self.read_bytes);
+        self.read_bytes += self
+            .device_handle
+            .read_bulk(ep_in, &mut self.read_buffer[self.read_bytes..], timeout)
+            .map_err(|e| DebugProbeError::USB(Some(Box::new(e))))?;
+        log::debug!("Buffer is now {}", self.read_bytes);
+        log::debug!(" --> {:?}", &self.read_buffer[..self.read_bytes]);
 
-            if read_bytes < 4 || read_data_pkt[read_bytes - 3] != b'#' {
-                return Err(IcdiError::InvalidProtocol.into());
-            }
 
-            if read_bytes > 5 && read_data_pkt[3] == b':' {
-                verify_packet(&read_data_pkt[3..read_bytes])?;
-                &read_data[..read_bytes - (1 + 3 + 3)]
-                    .copy_from_slice(&read_data_pkt[4..read_bytes - 3]);
-            } else {
-                verify_packet(&read_data_pkt[..read_bytes])?;
-                &read_data[..read_bytes - 4].copy_from_slice(&read_data_pkt[1..read_bytes - 3]);
-            }
-
-            log::debug!("read step done, checksum OK");
+        if self.read_bytes < 4 || self.read_buffer[self.read_bytes - 3] != b'#' {
+            return Err(IcdiError::InvalidProtocol.into());
         }
-        Ok((written_bytes, read_bytes))
+
+        if self.read_bytes > 5 && self.read_buffer[3] == b':' {
+            verify_packet(&self.read_buffer[3..self.read_bytes])?;
+            // &read_data[..self.read_bytes - (1 + 3 + 3)]
+            //     .copy_from_slice(&self.read_buffer[4..self.read_bytes - 3]);
+        } else {
+            verify_packet(&self.read_buffer[..self.read_bytes])?;
+            // &read_data[..self.read_bytes - 4].copy_from_slice(&self.read_buffer[1..self.read_bytes - 3]);
+        }
+        log::debug!("read step done, checksum OK");
+
+
+        if !read_data.is_empty() {
+            log::debug!("Copying read data ({} bytes total) to caller buffer ({} bytes)", self.read_bytes, read_data.len());
+            if self.read_bytes > 5 && self.read_buffer[3] == b':' {
+                log::debug!("Skipping the 'OK:' prefix");
+                &read_data[..self.read_bytes - (1 + 3 + 3)]
+                    .copy_from_slice(&self.read_buffer[4..self.read_bytes - 3]);
+            } else {
+                log::debug!("Not skipping anything");
+                &read_data[..self.read_bytes - 4].copy_from_slice(&self.read_buffer[1..self.read_bytes - 3]);
+            }
+        } else {
+            log::debug!("Discarding read data");
+        }
+
+        Ok((written_bytes, self.read_bytes))
     }
 
     fn write_remote(

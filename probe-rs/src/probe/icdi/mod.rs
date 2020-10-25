@@ -23,6 +23,80 @@ use std::{cmp::Ordering, convert::TryInto, time::Duration};
 use thiserror::Error;
 use usb_interface::TIMEOUT;
 
+// ICDI protocol reversed from openocd and lm4flash tools.
+//
+// All commands starts by $ and finish by # and a 2 bytes checksum
+// example : $foo#xx
+//
+//
+// Abstract:
+// Each packet has the form:
+// $ <command-and-payload> # <checksum>
+//
+// The normal reply has the same format:
+// $ <reply> # <checksum>
+//
+// Reply can also be a NACK:
+// -
+//
+// Read memory command:
+// -> "x<AAAAAAAA>,<SZ>" : Read SZ bytes starting from address AAAAAAAA
+// <- "-" : NACK, may retry
+// <- "OK:<BBBBBBBBB>" : Reply with bytes in BBBBBBBBBB. Checksum on B only.
+// <- "E<XX>" : In case of error XX
+//
+// Write memory command:
+// -> "X<AAAAAAAA>,<SZ>:<BBBBB>" : Write SZ bytes in BBBBB starting from address AAAAAAAA
+// <- "+" : Acknowledge
+//
+// Continue execution
+// -> "c"
+//
+// Halt execution
+// -> "?"
+//
+// Step execution
+// -> "s"
+//
+// Read register
+// -> "p<regno>"
+// <- "+$<4-bytes-value>"
+//
+// Write register
+// -> "P<regno>=<4-bytes-val>"
+// <- "+$OK" or "+$" ?
+
+// qSupported
+//
+// Flash erase:
+// -> vFlashErase:<start>,<end>
+//
+// Flash write:
+// -> vFlashWrite:<addr-08x>:<escaped-bytes>
+
+// Set extended mode
+// -> "!": Set extended mode
+// <- "OK": Success
+// <- "E<XX>": Error XX
+//
+// Send remote command
+// -> "qRcmd,<CCCCCCCCC>": Send remote command CCCCCC. CCCCCC must be hex-encoded
+// -> "-": NACK, may retry
+// ->
+
+// lm4flash:
+// qRcmd,version -> +$
+//
+// openocd:
+// - icdi_send_cmd : retry send on '-', error on '+'. Sends command and reads anything avail from read_ep. Error if not ending by #xx.
+//   - checks result with icdi_get_cmd_result:
+//     - $OK -> return OK without looking deeper
+//     - $Exx -> return errors
+//
+// - icdi_send_remote_cmd: serialize then icdi_send_cmd (ie. does not check for OK/Exx, only -/+)
+//   - expects reply of the form : +$<payload>
+//
+
 #[derive(Debug)]
 pub struct ICDI<D: IcdiUsb> {
     device: D,
@@ -708,7 +782,7 @@ impl<D: IcdiUsb> ICDI<D> {
         //  - }x an escaped byte payload (occupies 2 bytes)
         //        let mut receive_buffer = vec![0u8; (6 + byte_length*2 + 3) as usize];
 
-        let mut recv_data = vec![0u8; 4];
+        let mut recv_data = vec![0u8; byte_length as usize];
 
         self.device.write(
             &format!("x{:08x},{:x}", address, byte_length).into_bytes(),
@@ -1258,7 +1332,14 @@ impl MemoryInterface for IcdiArmDebug {
 
     fn read_32(&mut self, address: u32, data: &mut [u32]) -> Result<(), ProbeRsError> {
         log::trace!("read_32 {:08x} len {}", address, data.len());
-        unimplemented!();
+        let received_words = self.probe.read_mem_32bit(
+            address,
+            data.len() as u16
+        )?;
+
+        data.copy_from_slice(&received_words);
+
+        Ok(())
     }
 
     fn read_8(&mut self, address: u32, data: &mut [u8]) -> Result<(), ProbeRsError> {
