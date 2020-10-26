@@ -222,7 +222,6 @@ impl DebugProbe for ICDI<ICDIUSBDevice> {
     fn get_arm_interface<'probe>(
         self: Box<Self>,
     ) -> Result<Option<Box<dyn ArmProbeInterface + 'probe>>, DebugProbeError> {
-        //unimplemented!();
         let interface = IcdiArmDebug::new(self)?;
 
         Ok(Some(Box::new(interface)))
@@ -1246,8 +1245,70 @@ impl IcdiArmDebug {
         // Determine the number and type of available APs.
 
         let mut interface = Self { probe, state };
+
+        // FIXME: get somehow 2 AccessPort :
+        // - one for memory
+        // - one for registers
+        for ap in valid_access_ports(&mut interface) {
+            let ap_state = interface.read_ap_information(ap)?;
+
+            log::debug!("AP {}: {:?}", ap.port_number(), ap_state);
+
+            interface.state.ap_information.push(ap_state);
+        }
+
+
         Ok(interface)
     }
+
+    fn read_ap_information(
+        &mut self,
+        access_port: GenericAP,
+    ) -> Result<ApInformation, DebugProbeError> {
+        let idr = self.read_ap_register(access_port, IDR::default())?;
+
+        if idr.CLASS == APClass::MEMAP {
+            let access_port: MemoryAP = access_port.into();
+
+            let base_register = self.read_ap_register(access_port, BASE::default())?;
+
+            let mut base_address = if BaseaddrFormat::ADIv5 == base_register.Format {
+                let base2 = self.read_ap_register(access_port, BASE2::default())?;
+
+                u64::from(base2.BASEADDR) << 32
+            } else {
+                0
+            };
+            base_address |= u64::from(base_register.BASEADDR << 12);
+
+            log::debug!(
+                "AP {} - BaseAddress: {:#08x}",
+                access_port.port_number(),
+                base_address
+            );
+
+            // Ensure that we can access this AP.
+            let status = self.read_ap_register(access_port, CSW::default())?;
+
+            log::debug!("AP {} - {:?}", access_port.port_number(), status);
+
+            // TODO: Figure out how to handle this for STM32,
+            //       it is not clear how the memory accesses work
+            //       with the dedicated API
+            let only_32bit_data_size = false;
+
+            Ok(ApInformation::MemoryAp {
+                port_number: access_port.port_number(),
+                only_32bit_data_size,
+                debug_base_address: base_address,
+            })
+        } else {
+            Ok(ApInformation::Other {
+                port_number: access_port.port_number(),
+            })
+        }
+    }
+
 }
 
 impl<'probe> ArmProbeInterface for IcdiArmDebug {
@@ -1259,13 +1320,9 @@ impl<'probe> ArmProbeInterface for IcdiArmDebug {
         &self,
         access_port: crate::architecture::arm::ap::GenericAP,
     ) -> Option<&crate::architecture::arm::communication_interface::ApInformation> {
-        Some(
-            &crate::architecture::arm::communication_interface::ApInformation::MemoryAp {
-                port_number: 0,
-                only_32bit_data_size: false,
-                debug_base_address: 0,
-            },
-        )
+        self.state
+            .ap_information
+            .get(access_port.port_number() as usize)
     }
 
     fn read_from_rom_table(
@@ -1285,6 +1342,40 @@ impl<'probe> ArmProbeInterface for IcdiArmDebug {
     }
 }
 
+impl<AP, R> APAccess<AP, R> for IcdiArmDebug
+where
+    R: APRegister<AP> + Clone,
+    AP: AccessPort,
+{
+    type Error = DebugProbeError;
+
+    fn read_ap_register(&mut self, port: impl Into<AP>, register: R) -> Result<R, Self::Error> {
+        self.read_ap_register(port, register)
+    }
+
+    fn write_ap_register(&mut self, port: impl Into<AP>, register: R) -> Result<(), Self::Error> {
+        self.write_ap_register(port, register)
+    }
+
+    fn write_ap_register_repeated(
+        &mut self,
+        port: impl Into<AP> + Clone,
+        register: R,
+        values: &[u32],
+    ) -> Result<(), Self::Error> {
+        self.write_ap_register_repeated(port, register, values)
+    }
+
+    fn read_ap_register_repeated(
+        &mut self,
+        port: impl Into<AP> + Clone,
+        register: R,
+        values: &mut [u32],
+    ) -> Result<(), Self::Error> {
+        self.read_ap_register_repeated(port, register, values)
+    }
+}
+
 impl<'a> AsRef<dyn DebugProbe + 'a> for IcdiArmDebug {
     fn as_ref(&self) -> &(dyn DebugProbe + 'a) {
         self.probe.as_ref()
@@ -1297,6 +1388,8 @@ impl<'a> AsMut<dyn DebugProbe + 'a> for IcdiArmDebug {
     }
 }
 
+
+// This is forced but currently have no way to be implemented.
 impl SwoAccess for IcdiArmDebug {
     fn enable_swo(&mut self, config: &SwoConfig) -> Result<(), ProbeRsError> {
         unimplemented!();
