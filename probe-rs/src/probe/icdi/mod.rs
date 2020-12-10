@@ -5,6 +5,7 @@ mod usb_interface;
 use self::usb_interface::{ICDIUSBDevice, IcdiUsb};
 use super::{DAPAccess, DebugProbe, DebugProbeError, PortType, ProbeCreationError, WireProtocol};
 use crate::{
+    architecture::arm::communication_interface::MemoryApInformation,
     architecture::arm::{
         ap::{
             valid_access_ports, APAccess, APClass, APRegister, AccessPort, BaseaddrFormat,
@@ -619,7 +620,12 @@ impl IcdiArmDebug {
 
         //     log::debug!("AP {}: {:?}", ap.port_number(), ap_state);
 
-        interface.state.ap_information.push(ApInformation::MemoryAp {port_number:0, only_32bit_data_size: true, debug_base_address: 0});
+        interface.state.ap_information.push(ApInformation::MemoryAp(MemoryApInformation {
+            port_number:0,
+            only_32bit_data_size: true,
+            supports_hnonsec: false,
+            debug_base_address: 0
+        }));
         interface.state.ap_information.push(ApInformation::Other {port_number:1});
 
         // }
@@ -632,7 +638,12 @@ impl IcdiArmDebug {
         access_port: GenericAP,
     ) -> Result<ApInformation, DebugProbeError> {
         if access_port.port_number() == 0 {
-            Ok(ApInformation::MemoryAp {port_number:0, only_32bit_data_size: true, debug_base_address: 0})
+            Ok(ApInformation::MemoryAp (MemoryApInformation {
+                port_number:0,
+                only_32bit_data_size: true,
+                supports_hnonsec: false,
+                debug_base_address: 0,
+            }))
         } else {
             Ok(ApInformation::Other {port_number:1})
         }
