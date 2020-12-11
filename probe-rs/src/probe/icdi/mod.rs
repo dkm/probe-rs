@@ -365,25 +365,17 @@ impl<D: IcdiUsb> ICDI<D> {
         Err(IcdiError::FixMeError(line!()).into())
     }
 
-    fn write_mem_32bit(&mut self, address: u32, data: &[u32]) -> Result<(), DebugProbeError> {
+    fn write_mem_32bit(
+        &mut self,
+        address: u32,
+        data: &[u8],
+    ) -> Result<(), DebugProbeError> {
         log::trace!("write_mem_32bit");
-        let length = data.len();
-
-        let byte_length = length * 4;
-
-        let mut tx_buffer = vec![0u8; byte_length];
-
-        let mut offset = 0;
-
-        for word in data {
-            tx_buffer
-                .gwrite(word, &mut offset)
-                .expect("Failed to write into tx_buffer");
-        }
+        let byte_length = data.len();
 
         let pkt_data = [
             format!("X{:08x},{:x}:", address, byte_length).into_bytes(),
-            tx_buffer,
+            data.to_vec(),
         ]
         .concat();
 
@@ -472,7 +464,7 @@ impl<D: IcdiUsb> MemoryInterface for ICDI<D> {
 //        for (index, chunk) in data.chunks_mut(STLINK_MAX_READ_LEN / 4).enumerate() {
             let mut buff = vec![0u8; 4 * chunk.len()];
 
-            let received_words = self.read_mem_32bit(
+            self.read_mem_32bit(
                 address,
                 &mut buff
             )?;
@@ -522,11 +514,24 @@ impl<D: IcdiUsb> MemoryInterface for ICDI<D> {
     }
 
     fn write_32(&mut self, address: u32, data: &[u32]) -> Result<(), ProbeRsError> {
-        // self.probe.select_ap(self.access_port)?;
 
-        // self.probe
-        //     .probe
-        //     .write_mem_32bit(address, data, self.access_port.port_number())?;
+        let mut tx_buffer = vec![0u8; data.len() * 4];
+
+        let mut offset = 0;
+
+        for word in data {
+            tx_buffer
+                .gwrite(word, &mut offset)
+                .expect("Failed to write into tx_buffer");
+        }
+
+        for (index, chunk) in tx_buffer.chunks(32).enumerate() {
+            self.write_mem_32bit(
+                address + (index * 32) as u32,
+                chunk
+            )?;
+        }
+
         Ok(())
     }
 
@@ -844,7 +849,7 @@ impl ArmProbe for IcdiMemoryInterface<'_> {
     ) -> Result<(), ProbeRsError> {
         log::trace!("read_32 {:08x} x {}", address, data.len());
 
-        self.probe.probe.read_32(address, data);
+        self.probe.probe.read_32(address, data)?;
 
         Ok(())
     }
@@ -856,6 +861,8 @@ impl ArmProbe for IcdiMemoryInterface<'_> {
 
     fn write_32(&mut self, ap: MemoryAP, address: u32, data: &[u32]) -> Result<(), ProbeRsError> {
         log::trace!("write_32 @{:08x} x {}", address, data.len());
+
+        self.probe.probe.write_32(address, data)?;
         Ok(())
     }
 

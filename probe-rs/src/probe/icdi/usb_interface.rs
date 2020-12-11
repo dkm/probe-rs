@@ -277,7 +277,7 @@ impl IcdiUsb for ICDIUSBDevice {
 
                 log::debug!(" --> really write {} bytes", packet.len());
                 log::debug!(" --> {:x?}", packet);
-                log::debug!(" --> {:?}", std::str::from_utf8(&packet).unwrap());
+//                log::debug!(" --> {:?}", std::str::from_utf8(&packet).unwrap());
                 let written_bytes = self
                     .device_handle
                     .write_bulk(ep_out, &packet, timeout)
